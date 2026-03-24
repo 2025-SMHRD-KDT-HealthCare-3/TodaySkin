@@ -1,0 +1,15 @@
+# Python (venv/ 용량 큼)
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# 환경변수 (API 키, DB 비밀번호 - 절대 올리면 안됨!)
+.env
+
+# Mac 시스템 파일
+.DS_Store
+
+# YOLO 모델 파일 (용량 커서 제외)
+*.pt
+*.pth
