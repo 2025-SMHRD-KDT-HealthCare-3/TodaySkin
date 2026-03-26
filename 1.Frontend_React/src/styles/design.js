@@ -1,0 +1,17 @@
+export const D = {
+  mainBg: "#FAF9F7",
+  bgMain: "#FDFCFA",
+  bgSub: "#F4E5D9",
+  nav: "#9eae9c",
+  footer: "#556f63",
+  cta: "#C4705A",
+  secondary: "#CAA290",
+  accent: "#D9A450",
+  positive: "#5A9E8F",
+  warning: "#D97B4A",
+  title: "#4A3428",
+  textBody: "#5C4A3F",
+  textLight: "#8A7A70",
+  border: "#E8DDD5",
+  white: "#FFFFFF",
+};
