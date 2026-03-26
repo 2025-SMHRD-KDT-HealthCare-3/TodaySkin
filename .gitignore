@@ -13,3 +13,6 @@ __pycache__/
 # YOLO 모델 파일 (용량 커서 제외)
 *.pt
 *.pth
+
+# node_modules 폴더는 무시
+node_modules/

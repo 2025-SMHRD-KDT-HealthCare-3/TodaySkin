@@ -11,6 +11,9 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+// 메인 라우터 불러오기
+const mainRouter = require('./routes/mainRouter');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -19,12 +22,15 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended : true }))
 
-// 테스트 라우터
+// 모든 /api로 시작하는 요청은 mainRouter가 처리한다.
+app.use('/api', mainRouter);
+
+// 테스트용 기본 라우트
 app.get('/', (req, res) => {
   res.json({ message: '오늘의 피부 서버 실행 중!' });
 });
 
-// DB연결 TEST : 확인 후 삭제
+// 5. DB 연결 확인 (config/database.js 연동)
 const conn = require('./config/database');
 
 conn.connect((err) => {
@@ -34,8 +40,9 @@ conn.connect((err) => {
     console.log('DB 연결 성공! ✅');
   }
 });
-// DB연결 TEST : 여기까지 삭제
 
 app.listen(PORT, () => {
   console.log(`서버 실행 중: http://localhost:${PORT}`);
 });
+
+
