@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { D } from "../styles/design";
 
-export default function LoginPage({ onLogin, onSignUp }) {
+export default function Login({ onLogin, onSignUp }) {
   const [id, setId] = useState("");
   const [pwd, setPwd] = useState("");
 

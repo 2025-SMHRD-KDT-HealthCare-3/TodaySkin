@@ -1,39 +1,38 @@
-import { Route, Routes } from 'react-router-dom'
+import { useState } from "react";
+import { Routes, Route } from "react-router-dom";
 import MainBg from "./components/MainBg";
-import LoginPage from "./pages/LoginPage";
-/*
-* 참고! 각각 포트번호가 달라야 충돌 없습니다.
-React      → http://localhost:5173  (Vite 기본값)
-Node.js    → http://localhost:3000
-FastAPI    → http://localhost:8000
-*/
+
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Main from "./pages/Main";
+import ProfileView from "./pages/ProfileView";
+import ProfileEdit from "./pages/ProfileEdit";
+import ImgUpload from "./pages/ImgUpload";
+import SkinReport from "./pages/SkinReport";
+import ChalHistory from "./pages/ChalHistory";
+import Chatbot from "./pages/Chatbot";
+import CosManage from "./pages/CosManage";
+import CosRec from "./pages/CosRec";
+
 
 export default function App() {
+    const [ isLoggedIn, setIsLoggedIn ] = useState(false);  //로그인 로직 연결필요
 
-      const handleLogin = async (data) => {
-    try {
-        const res = await fetch("http://localhost:3000/api/users/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
-        });
-        const result = await res.json();
-
-        if (result.status === "success") {
-            // 로그인 성공 → 메인 페이지로 이동
-            console.log("환영합니다!", result.data.nick);
-        } else {
-            // 실패 → 에러 메시지 표시
-            alert(result.data.message);
-        }
-    } catch (error) {
-        alert("서버 연결에 실패했습니다.");
-    }
-};
-
-  return (
-    <MainBg>
-      <LoginPage onLogin={handleLogin} />
-    </MainBg>
-  );
+    return (
+        <MainBg bodyCard={
+            <Routes>
+                <Route path="/" element={isLoggedIn ? <Main /> : <Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/profile" element={<ProfileView />} />
+                <Route path="/profile/edit" element={<ProfileEdit />} />
+                <Route path="/analysis" element={<ImgUpload />} />
+                <Route path="/report" element={<SkinReport />} />
+                <Route path="/challenge" element={<ChalHistory />} />
+                <Route path="/chatbot" element={<Chatbot />} />
+                <Route path="/cosmetics" element={<CosManage />} />
+                <Route path="/recommend" element={<CosRec />} />
+            </Routes>
+        }>
+        </MainBg>
+    );
 }
