@@ -1,3 +1,9 @@
-::-webkit-scrollbar {
+/* 스크롤바 숨기기 (스크롤 기능은 유지) */
+*::-webkit-scrollbar {
   display: none;
+}
+
+* {
+  -ms-overflow-style: none;  /* IE, Edge */
+  scrollbar-width: none;     /* Firefox */
 }

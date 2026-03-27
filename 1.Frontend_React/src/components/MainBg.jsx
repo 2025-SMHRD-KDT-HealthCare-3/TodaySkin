@@ -1,7 +1,7 @@
-import React from "react";
 import { D } from "../styles/design";
+import tsLogo from "../assets/TS_Logo.png";
 
-export default function MainBg({ children }) {
+export default function MainBg({ bodyCard }) {
   return (
     <div
       style={{
@@ -9,12 +9,11 @@ export default function MainBg({ children }) {
         inset: 0,
         background: D.mainBg,
         display: "flex",
-        overflowY: "auto",
         overflow: "auto",
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       }}
     >
-      {/* ── 좌측 배경 영역 ── */}
+
+      {/* ── 좌측 브랜딩 영역 ── */}
       <div
         style={{
           flex: 1,
@@ -22,12 +21,12 @@ export default function MainBg({ children }) {
           flexDirection: "column",
           justifyContent: "center",
           alignItems: "center",
-          position: "relative",
-          marginRight: -150,
-          pointerEvents: "none",
+          marginRight: -150, // 우측 카드와 겹침 효과
+          pointerEvents: "none", // 클릭 방지 (배경 전용)
         }}
       >
-        {/* 로고 + 카피라이트 묶음 */}
+
+        {/* 로고 + 카피라이트 */}
         <div
           style={{
             display: "flex",
@@ -35,8 +34,9 @@ export default function MainBg({ children }) {
             alignItems: "center",
           }}
         >
+
           <img
-            src="/src/assets/TS_Logo.png"
+            src={tsLogo}
             alt="Today's Skin"
             style={{
               width: 240,
@@ -54,27 +54,28 @@ export default function MainBg({ children }) {
               textAlign: "center",
             }}
           >
-            © 2026 TODAY'S SKIN SMHRD
+            © 2026 TODAY'S SKIN / SMHRD
           </div>
         </div>
       </div>
 
-      {/* ── 우측 카드 패널 (가운데-오른쪽 배치) ── */}
+      {/* ── 우측 카드 패널 ── */}
+      {/* TODO: 반응형 대응 필요 — 현재 width/margin 고정값이라 작은 화면에서 잘림 */}
       <div
         style={{
           width: 440,
           height: "100%",
-          margin: "0px 300px 0px 0px",
+          margin: "0px 300px 0px 0px", // 오른쪽 여백으로 중앙-우측 배치
           background: D.bgMain,
           borderRadius: 24,
           boxShadow: "-8px 0 40px rgba(74, 52, 40, 0.08)",
           display: "flex",
           flexDirection: "column",
-          overflowY: "hidden",
+          overflowY: "auto", // TODO: 콘텐츠 길어질 경우 스크롤 필요 — hidden이면 잘림
           flexShrink: 0,
         }}
       >
-        {children}
+        { bodyCard }
       </div>
     </div>
   );
