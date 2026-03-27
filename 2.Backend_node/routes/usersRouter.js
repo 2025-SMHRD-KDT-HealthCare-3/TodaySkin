@@ -98,30 +98,56 @@ router.post('/signup', async (req, res) => {
 
 // 로그인
 
-// router.post('/login', (req,res) => {
-//     const {id, pwd} = req.body;
+router.post('/login', async (req, res) => {
+    const { id, pwd } = req.body;
 
-//     // 입력값 체크
-//     if(!id || !pwd) {
-//         return res.status(400).json({ status : 'error', data : { message: '아이디와 비밀번호를 입력해주세요.'} })
-//     }
+    // 1. 입력값 체크
+    if (!id || !pwd) {
+        return res.status(400).json({ status: "error", data: { message: "아이디와 비밀번호를 입력해주세요." } });
+    }
 
-//     // DB에서 아이디로 유저 조회
-//     const sql = 'SELECT * FROM users WHERE id = ?';
-//     conn.query(sql, [id], async (err, results) => {
-//         if(err){
-//             console.log(err);
-//             return res.status(500).json({ status : 'error', data : {message : '서버 오류'}})
-//         }
-//         if(resultS.length === 0 ){
-//             return res.status(401).json({ status : 'error', data : {message : '아이디 또는 비밀번호가 틀렸습니다.'}})
-//         }
-//         const user = results[0];
+    // 2. DB에서 아이디로 유저 조회
+    const sql = "SELECT * FROM users WHERE id = ?";
+    conn.query(sql, [id], async (err, results) => {
+        if (err) {
+            console.error(err);
+            return res.status(500).json({ status: "error", data: { message: "서버 오류" } });
+        }
 
-//         try {
-//             const isMatch = await bcrypt.compare(pwd, user.pwd);
-//         }
-//     })
-// })
+        // 아이디가 없는 경우
+        if (results.length === 0) {
+            return res.status(401).json({ status: "error", data: { message: "아이디 또는 비밀번호가 틀렸습니다." } });
+        }
+
+        const user = results[0];
+
+        try {
+            // 3. 비밀번호 비교 (입력 비번 vs DB 암호화 비번)
+            const isMatch = await bcrypt.compare(pwd, user.pwd);
+
+            if (isMatch) {
+                // 💡 4. 세션에 사용자 정보 저장 (쿠키 생성됨)
+                req.session.user_no = user.user_no;
+                req.session.nick = user.nick;
+                req.session.skintype = user.skintype;
+
+                res.json({
+                    status: "success",
+                    data: {
+                        user_no: user.user_no,
+                        nick: user.nick,
+                        message: `${user.nick}님, 환영합니다!`
+                    }
+                });
+            } else {
+                // 비밀번호가 틀린 경우
+                res.status(401).json({ status: "error", data: { message: "아이디 또는 비밀번호가 틀렸습니다." } });
+            }
+        } catch (error) {
+            res.status(500).json({ status: "error", data: { message: "로그인 처리 중 오류 발생" } });
+        }
+    });
+});
+
 
 module.exports = router;

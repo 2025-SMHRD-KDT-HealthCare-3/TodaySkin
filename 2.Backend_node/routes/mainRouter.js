@@ -8,11 +8,11 @@ const usersRouter = require('./usersRouter');
 // const challengeRouter = require('./challengeRouter');
 // const reportRouter = require('./reportRouter');
 
-router.use('/usersRouter', usersRouter);
-// router.use('/skinRouter', skinRouter);
-// router.use('/routineRouter', routineRouter);
-// router.use('/cosmeticsRouter', cosmeticsRouter);
-// router.use('/challengeRouter', challengeRouter);
-// router.use('/reportRouter', reportRouter);
+router.use('/users', usersRouter);
+// router.use('/skin', skinRouter);
+// router.use('/routine', routineRouter);
+// router.use('/cosmetics', cosmeticsRouter);
+// router.use('/challenge', challengeRouter);
+// router.use('/report', reportRouter);
 
 module.exports = router;
