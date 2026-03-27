@@ -13,6 +13,7 @@ const session = require('express-session');
 const FileStore = require('session-file-store')(session);
 require('dotenv').config();
 
+
 // 메인 라우터 불러오기
 const mainRouter = require('./routes/mainRouter');
 
@@ -21,13 +22,16 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 미들웨어
-app.use(cors());
+app.use(cors({
+    origin: 'http://localhost:5173', // React 주소
+    credentials: true                // 쿠키 허용
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended : true }))
 
 // 세션 설정
 app.use(session({
-    secret: 'todayskin_secret', 
+    secret: process.env.SESSION_SECRET, 
     resave: false,
     saveUninitialized: false,
     store: new FileStore(),     
