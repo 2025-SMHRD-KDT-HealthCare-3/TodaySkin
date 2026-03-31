@@ -26,7 +26,7 @@ export default function App() {
                 <Route path="/join" element={<Join />} />
                 <Route path="/profile" element={<ProfileView />} />
                 <Route path="/profile/edit" element={<ProfileEdit />} />
-                <Route path="/analysis" element={<ImgUpload />} />
+                <Route path="/analyze" element={<ImgUpload />} />
                 <Route path="/report" element={<SkinReport />} />
                 <Route path="/challenge" element={<ChalHistory />} />
                 <Route path="/chatbot" element={<Chatbot />} />
