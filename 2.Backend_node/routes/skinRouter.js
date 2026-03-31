@@ -4,131 +4,279 @@ const conn = require('../config/database');
 const multer = require('multer');
 const path = require('path');
 const axios = require('axios');
+const fs = require('fs');
+const jwt = require('jsonwebtoken');
 
-// 로그인 체크 미들웨어
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
 
-const requireLogin = (req, res, next) => {
-    if(!req.session.user_no){
-        return res.status(401).json({ status : "error" , data: { message : "로그인이 필요합니다."}})
+// ============================================================
+// 커스텀 에러 클래스
+// ============================================================
+
+class ValidationError extends Error {
+    constructor(message, statusCode = 400) {
+        super(message);
+        this.name = 'ValidationError';
+        this.statusCode = statusCode;
     }
-    next();
 }
 
+// ============================================================
+// 공통 에러 핸들러
+// ============================================================
+
+const handleError = (res, error) => {
+    if (error instanceof ValidationError) {
+        return res.status(error.statusCode).json({
+            status: "error",
+            data: { message: error.message }
+        });
+    }
+    console.error('[SERVER ERROR]', error);
+    return res.status(500).json({
+        status: "error",
+        data: { message: "서버 오류" }
+    });
+};
+
+// ============================================================
+// JWT 인증 미들웨어
+// ============================================================
+
+const requireLogin = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({
+            status: "error",
+            data: { message: "로그인이 필요합니다." }
+        });
+    }
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        return res.status(401).json({
+            status: "error",
+            data: { message: "유효하지 않거나 만료된 토큰입니다." }
+        });
+    }
+};
+
+// ============================================================
 // multer 설정
+// ============================================================
 
 const storage = multer.diskStorage({
-    destination : (req, file, cb) => {
-        cb(null, 'uploads/');  // uploads 폴더에 저장
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/');
     },
     filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '_' + req.session.user_no;
+        const uniqueSuffix = Date.now() + '_' + req.user.user_no;
         cb(null, uniqueSuffix + path.extname(file.originalname));
     }
-})
+});
 
-const upload = multer({ storage : storage});
+const upload = multer({ storage });
 
-// 사진 업로드 및 DB 기록 API
-// POST/api/skin/upload
+// ============================================================
+// 파일 물리적 삭제 헬퍼
+// ============================================================
 
-router.post('/upload', requireLogin, upload.single('skin_img'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({
-            status: "error",
-            data: { message: "사진이 전송되지 않았습니다." }
-        });
-    }
+const deleteFile = (filePath) => {
+    if (!filePath) return;
+    const fullPath = path.join(__dirname, '..', filePath);
+    fs.unlink(fullPath, (err) => {
+        if (err && err.code !== 'ENOENT') {
+            console.error('[FILE DELETE ERROR]', fullPath, err);
+        }
+    });
+};
 
-    const user_no = req.session.user_no;
-    const file_name = `uploads/${req.file.filename}`;
-    const file_size = req.file.size;
-    const file_ext = path.extname(req.file.originalname).toLowerCase();
+// ============================================================
+// 이미지 업로드 및 피부 분석
+// POST /api/skin/analyze
+// - 동일 날짜 재업로드 시 기존 파일 및 DB 레코드 삭제 후 저장
+// ============================================================
 
-    // 🔒 파일 확장자 검사
-    const allowed = ['.jpg', '.jpeg', '.png'];
-    if (!allowed.includes(file_ext)) {
-        return res.status(400).json({
-            status: "error",
-            data: { message: "지원하지 않는 파일 형식입니다." }
-        });
-    }
-
-    // 1️⃣ uploads 저장
-    const sql = `
-        INSERT INTO uploads (user_no, file_name, file_size, file_ext, uploaded_at)
-        VALUES (?, ?, ?, ?, NOW())
-    `;
-
-    conn.query(sql, [user_no, file_name, file_size, file_ext], async (err, result) => {
-        if (err) {
-            console.error('[UPLOAD DB ERROR]', err);
-            return res.status(500).json({
-                status: "error",
-                data: { message: "업로드 기록 저장 실패" }
-            });
+router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res) => {
+    try {
+        if (!req.file) {
+            throw new ValidationError("이미지 파일을 업로드해주세요.");
         }
 
-        const upload_no = result.insertId;
+        const user_no = req.user.user_no;
+        const file_name = `uploads/${req.file.filename}`;
+        const file_size = req.file.size;
+        const file_ext = path.extname(req.file.originalname).toLowerCase();
 
-        try {
-            // 2️⃣ Python 서버 요청
-            const pythonRes = await axios.post('http://localhost:8000/predict', {
-                upload_no,
-                file_path: file_name
-            });
+        const allowed = ['.jpg', '.jpeg', '.png'];
+        if (!allowed.includes(file_ext)) {
+            deleteFile(file_name);
+            throw new ValidationError("지원하지 않는 파일 형식입니다.");
+        }
 
-            const { processing_img, acne_score } = pythonRes.data;
+        const today = new Date().toISOString().slice(0, 10);
 
-            // 3️⃣ 분석 결과 저장
-            const analysisSql = `
-                INSERT INTO img_analyses (upload_no, processing_img, acne_score, analysis_at)
-                VALUES (?, ?, ?, NOW())
-            `;
+        // 오늘 기존 업로드 조회
+        const checkSql = `
+            SELECT u.upload_no, u.file_name, a.anls_no, a.processing_img
+            FROM uploads u
+            LEFT JOIN img_analyses a ON u.upload_no = a.upload_no
+            WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
+        `;
 
-            conn.query(analysisSql, [upload_no, processing_img, acne_score], (err2) => {
-                if (err2) {
-                    console.error('[ANALYSIS DB ERROR]', err2);
-                    return res.status(500).json({
-                        status: "error",
-                        data: { message: "분석 결과 저장 실패" }
+        conn.query(checkSql, [user_no, today], async (err, existing) => {
+            if (err) return handleError(res, err);
+
+            // 기존 데이터 삭제
+            if (existing.length > 0) {
+                existing.forEach(row => {
+                    deleteFile(row.file_name);
+                    deleteFile(row.processing_img);
+                });
+
+                const existUploadNos = existing.map(r => r.upload_no);
+                conn.query(`DELETE FROM img_analyses WHERE upload_no IN (?)`, [existUploadNos], (err) => {
+                    if (err) return handleError(res, err);
+                    conn.query(`DELETE FROM uploads WHERE upload_no IN (?)`, [existUploadNos], (err) => {
+                        if (err) return handleError(res, err);
+                        insertUpload();
                     });
-                }
+                });
+            } else {
+                insertUpload();
+            }
 
-                return res.json({
-                    status: "success",
-                    data: {
-                        message: "분석 완료!",
-                        upload_no,
-                        acne_score,
-                        result_img: processing_img
+            async function insertUpload() {
+                const sql = `
+                    INSERT INTO uploads (user_no, file_name, file_size, file_ext, uploaded_at)
+                    VALUES (?, ?, ?, ?, NOW())
+                `;
+
+                conn.query(sql, [user_no, file_name, file_size, file_ext], async (err, result) => {
+                    if (err) return handleError(res, err);
+
+                    const upload_no = result.insertId;
+
+                    try {
+                        const pythonRes = await axios.post('http://localhost:8000/predict', {
+                            upload_no,
+                            file_path: file_name
+                        });
+
+                        const { processing_img, acne_score, pore_score, total_score } = pythonRes.data;
+
+                        const analysisSql = `
+                            INSERT INTO img_analyses
+                                (upload_no, model_name, anls_result, acne_score, pore_score, wrinkle_score, processing_img, created_at)
+                            VALUES (?, 'YOLO', ?, ?, ?, ?, ?, NOW())
+                        `;
+
+                        conn.query(
+                            analysisSql,
+                            [upload_no, JSON.stringify(pythonRes.data), acne_score, pore_score, 0, processing_img],
+                            (err2, anlsResult) => {
+                                if (err2) return handleError(res, err2);
+
+                                return res.json({
+                                    status: "success",
+                                    data: {
+                                        message: "이미지가 업로드되었습니다.",
+                                        analysis_id: anlsResult.insertId,
+                                        acne_score,
+                                        pore_score,
+                                        total_score
+                                    }
+                                });
+                            }
+                        );
+
+                    } catch (error) {
+                        console.error('[PYTHON SERVER ERROR]', error.message);
+                        conn.query("DELETE FROM uploads WHERE upload_no = ?", [upload_no]);
+                        deleteFile(file_name);
+                        return handleError(res, new ValidationError("분석 중 오류가 발생했습니다.", 500));
                     }
                 });
-            });
+            }
+        });
 
-        } catch (error) {
-            console.error('[PYTHON SERVER ERROR]', error.message);
+    } catch (error) {
+        if (req.file) deleteFile(`uploads/${req.file.filename}`);
+        handleError(res, error);
+    }
+});
 
-            // 🔥 롤백 처리 (핵심)
-            conn.query("DELETE FROM uploads WHERE upload_no = ?", [upload_no]);
+// ============================================================
+// 분석 결과 조회 (최신 1건)
+// GET /api/skin/result
+// ============================================================
 
-            const fs = require('fs');
-            const path = require('path');
-            const filePath = path.join(__dirname, '..', file_name);
+router.get('/result', requireLogin, (req, res) => {
+    const sql = `
+        SELECT
+            a.anls_no AS analysis_id,
+            a.acne_score,
+            a.pore_score,
+            a.wrinkle_score,
+            ROUND((a.acne_score + a.pore_score + a.wrinkle_score) / 3, 2) AS total_score,
+            u.file_name AS image_url,
+            a.processing_img,
+            a.created_at
+        FROM img_analyses a
+        JOIN uploads u ON a.upload_no = u.upload_no
+        WHERE u.user_no = ?
+        ORDER BY a.created_at DESC
+        LIMIT 1
+    `;
 
-            fs.unlink(filePath, (err) => {
-                if (err && err.code !== 'ENOENT') {
-                    console.error('[FILE DELETE ERROR]', err);
-                }
-            });
+    conn.query(sql, [req.user.user_no], (err, results) => {
+        if (err) return handleError(res, err);
 
-            return res.status(500).json({
-                status: "error",
-                data: { message: "AI 분석 서버 오류" }
-            });
+        if (results.length === 0) {
+            return handleError(res, new ValidationError("분석 결과가 존재하지 않습니다.", 404));
         }
+
+        return res.json({
+            status: "success",
+            data: results[0]
+        });
     });
 });
 
+// ============================================================
+// 분석 기록 목록 조회 (날짜별)
+// GET /api/skin/history
+// ============================================================
 
+router.get('/history', requireLogin, (req, res) => {
+    const sql = `
+        SELECT
+            a.anls_no AS analysis_id,
+            DATE(u.uploaded_at) AS date,
+            ROUND((a.acne_score + a.pore_score + a.wrinkle_score) / 3, 2) AS total_score
+        FROM img_analyses a
+        JOIN uploads u ON a.upload_no = u.upload_no
+        WHERE u.user_no = ?
+        ORDER BY u.uploaded_at DESC
+    `;
+
+    conn.query(sql, [req.user.user_no], (err, results) => {
+        if (err) return handleError(res, err);
+
+        if (results.length === 0) {
+            return handleError(res, new ValidationError("분석 결과를 찾을 수 없습니다.", 404));
+        }
+
+        return res.json({
+            status: "success",
+            data: results
+        });
+    });
+});
 
 module.exports = router;
