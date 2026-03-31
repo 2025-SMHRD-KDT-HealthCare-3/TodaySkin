@@ -1,9 +1,0 @@
-# 업로드된 파일은 처음엔 바이트 상태라서 YOLO가 쓸 수 있게 OpenCV 이미지로 바꿔주는 함수가 들어갈 파일
-
-import numpy as np
-import cv2
-
-def bytes_to_cv2_image(image_bytes: bytes):
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    return img
