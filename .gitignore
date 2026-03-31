@@ -16,3 +16,6 @@ __pycache__/
 
 # node_modules 폴더는 무시
 node_modules/
+
+# sessions 폴더
+2.Backend_node/sessions/

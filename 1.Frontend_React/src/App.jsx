@@ -3,7 +3,7 @@ import { Routes, Route } from "react-router-dom";
 import MainBg from "./components/MainBg";
 
 import Login from "./pages/Login";
-import Register from "./pages/Register";
+import Join from "./pages/Join";
 import Main from "./pages/Main";
 import ProfileView from "./pages/ProfileView";
 import ProfileEdit from "./pages/ProfileEdit";
@@ -16,13 +16,14 @@ import CosRec from "./pages/CosRec";
 
 
 export default function App() {
-    const [ isLoggedIn, setIsLoggedIn ] = useState(false);  //로그인 로직 연결필요
+    // 초기값을 localStorage에서 확인 : 로그인 성공하면 로그인 유지
+    const [ isLoggedIn, setIsLoggedIn ] = useState(() => !!localStorage.getItem("user"));
 
     return (
         <MainBg bodyCard={
             <Routes>
-                <Route path="/" element={isLoggedIn ? <Main /> : <Login />} />
-                <Route path="/register" element={<Register />} />
+                <Route path="/" element={isLoggedIn ? <Main /> : <Login onLoginSuccess={() => setIsLoggedIn(true)} />} />
+                <Route path="/join" element={<Join />} />
                 <Route path="/profile" element={<ProfileView />} />
                 <Route path="/profile/edit" element={<ProfileEdit />} />
                 <Route path="/analysis" element={<ImgUpload />} />

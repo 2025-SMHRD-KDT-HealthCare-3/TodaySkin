@@ -71,7 +71,7 @@ export default function MainBg({ bodyCard }) {
           boxShadow: "-8px 0 40px rgba(74, 52, 40, 0.08)",
           display: "flex",
           flexDirection: "column",
-          overflowY: "auto", // TODO: 콘텐츠 길어질 경우 스크롤 필요 — hidden이면 잘림
+          overflowY: "auto",
           flexShrink: 0,
         }}
       >
