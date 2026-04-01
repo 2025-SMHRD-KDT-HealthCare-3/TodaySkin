@@ -9,4 +9,4 @@ const conn = mysql.createConnection({
     database: process.env.DB_NAME
 });
 
-module.exports = conn;
+module.exports = conn.promise();
