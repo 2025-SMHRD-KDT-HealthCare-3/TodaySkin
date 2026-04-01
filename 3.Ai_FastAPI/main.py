@@ -1,6 +1,6 @@
 # 3.Ai_FastAPI/main.py
 
-# 현재 node의 skinRouter와 fastAPI의 skin_analyze 연결만 되어있는 상태
+# 현재 node의 skinRouter와 fastAPI의 skin_analyze 연결 코드만 되어있는 상태
 
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
