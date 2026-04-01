@@ -21,6 +21,7 @@ export default function Header({ nick = "회원님" }) {
         { label: "HOME", page: "/" },
         { label: "피부분석", page: "/analyze" },
         { label: "리포트", page: "/report" },
+        { label: "챗봇", page: "/chatbot" },
         { label: "화장품관리", page: "/cosmetics" },
         { label: "MY Page", page: "/profile" },
     ];
