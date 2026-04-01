@@ -34,16 +34,14 @@ class RoutineRequest(BaseModel):
     skin_type: str = ""
     acne_score: int = 0
     pore_score: int = 0
-    total_score: float = 0.0
     chal_type: int = 7
     week: int = 1
     user_cosmetics: str = ""
     cosmetic_candidates: str = ""
     age: int = 0
     gender: str = ""
-    total_score_change: float = 0.0  
-    compliance_rate: int = 0          
-
+    total_score_change: float = 0.0
+    compliance_rate: int = 0
 
 @app.post("/api/routine/generate")
 def create_routine(req: RoutineRequest):
@@ -56,9 +54,10 @@ class ChatRequest(BaseModel):
     skin_type: str = ""
     acne_score: int = 0
     pore_score: int = 0
-    chal_status: str = ""     
-    compliance_rate: int = 0   
-    user_cosmetics: str = ""   
+    chal_status: str = ""
+    compliance_rate: int = 0
+    user_cosmetics: str = ""
+    last_analysis_date: str = ""  
 
 @app.post("/api/chatbot/message")
 def chat(req: ChatRequest):
@@ -69,8 +68,8 @@ class CosmeticRequest(BaseModel):
     skin_type: str = ""
     acne_score: int = 0
     pore_score: int = 0
-    total_score: float = 0.0
     cosmetic_candidates: list = []
+    owned_categories: list = [] 
 
 @app.post("/api/cosmetics/recommend")
 def recommend(req: CosmeticRequest):
@@ -79,11 +78,7 @@ def recommend(req: CosmeticRequest):
 # ========== 데일리 리포트 한줄 코멘트 ==========
 class DailyCommentRequest(BaseModel):
     skin_type: str = ""
-    acne_score: float = 0.0
-    pore_score: float = 0.0
     total_score: float = 0.0
-    prev_acne_score: float = 0.0
-    prev_pore_score: float = 0.0
     prev_total_score: float = 0.0
 
 
