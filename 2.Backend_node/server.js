@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 const conn = require('./config/database');
 const mainRouter = require('./routes'); // ✅ 변수명 통일
@@ -15,8 +16,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use('/api', mainRouter); // ✅
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-app.get('/', (req, res) => {
+app.get('/', (_, res) => {
     res.json({ message: '오늘의 피부 서버 실행 중!' });
 });
 
