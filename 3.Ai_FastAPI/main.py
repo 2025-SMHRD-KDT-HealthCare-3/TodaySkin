@@ -1,10 +1,5 @@
-# 3.Ai_FastAPI/main.py
-
-# 현재 node의 skinRouter와 fastAPI의 skin_analyze 연결만 되어있는 상태
-
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from services.routine_generate import generate_routine
