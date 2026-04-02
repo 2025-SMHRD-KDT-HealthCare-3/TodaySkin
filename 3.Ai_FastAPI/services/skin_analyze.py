@@ -5,14 +5,13 @@ import os
 import base64
 import threading
 import cv2
+import numpy as np
 from ultralytics import YOLO
 from utils.preprocess import preprocess_image
 from utils.score_utils import calculate_skin_score
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_PATH = os.path.join(BASE_DIR, "model", "best.pt")
-
-SEVERITY_THRESHOLDS = (5, 15)
 
 _model: YOLO | None = None
 _model_lock = threading.Lock()
@@ -37,6 +36,63 @@ def get_model() -> YOLO:
     return _model
 
 
+def _score_to_severity(score: int) -> str:
+    """
+    점수를 severity 라벨로 변환합니다.
+    점수가 높을수록 피부 상태가 좋습니다.
+    """
+    if score >= 80:
+        return "mild"
+    elif score >= 50:
+        return "moderate"
+    return "severe"
+
+
+def _calculate_union_area_ratio(
+    boxes_xyxy: list[tuple[float, float, float, float]],
+    image_width: int,
+    image_height: int,
+) -> float:
+    """
+    여러 박스의 겹침을 제거한 union area ratio를 계산합니다.
+
+    방식:
+    - 이미지 크기와 동일한 mask를 만들고
+    - 각 박스 영역을 1로 칠한 뒤
+    - 최종적으로 1이 된 픽셀 수 / 전체 이미지 픽셀 수 로 계산
+
+    장점:
+    - 겹치는 박스 영역을 한 번만 계산 가능
+    - 현재처럼 큰 박스/겹침 박스가 있는 탐지 결과에 적합
+    """
+    if image_width <= 0 or image_height <= 0:
+        raise ValueError("유효하지 않은 이미지 크기입니다.")
+
+    if not boxes_xyxy:
+        return 0.0
+
+    mask = np.zeros((image_height, image_width), dtype=np.uint8)
+
+    for x1, y1, x2, y2 in boxes_xyxy:
+        x1 = max(0, min(image_width, int(round(x1))))
+        y1 = max(0, min(image_height, int(round(y1))))
+        x2 = max(0, min(image_width, int(round(x2))))
+        y2 = max(0, min(image_height, int(round(y2))))
+
+        if x2 <= x1 or y2 <= y1:
+            continue
+
+        mask[y1:y2, x1:x2] = 1
+
+    union_area = int(mask.sum())
+    image_area = image_width * image_height
+
+    if image_area <= 0:
+        return 0.0
+
+    return round(union_area / float(image_area), 6)
+
+
 def _parse_results(results, image_width: int, image_height: int) -> dict:
     """
     YOLO 추론 결과를 여드름/모공 별로 파싱합니다.
@@ -45,16 +101,28 @@ def _parse_results(results, image_width: int, image_height: int) -> dict:
         0 = acne
         1 = pore
 
-    모공은 count + area_ratio(박스 면적 / 전체 이미지 면적)를 함께 반환합니다.
+    현재 모공은 큰 박스/겹침 박스가 있을 수 있으므로
+    area_ratios 평균 대신 union_area_ratio를 계산합니다.
+
+    반환 형식:
+    {
+        "acne": {
+            "count": int,
+            "confidences": [float, ...]
+        },
+        "pore": {
+            "count": int,
+            "confidences": [float, ...],
+            "union_area_ratio": float
+        }
+    }
     """
     if image_width <= 0 or image_height <= 0:
         raise ValueError("유효하지 않은 이미지 크기입니다.")
 
     acne_confidences = []
     pore_confidences = []
-    pore_area_ratios = []
-
-    image_area = float(image_width * image_height)
+    pore_boxes_xyxy = []
 
     for result in results:
         if result.boxes is None:
@@ -69,14 +137,14 @@ def _parse_results(results, image_width: int, image_height: int) -> dict:
 
             elif cls == 1:
                 pore_confidences.append(round(conf, 4))
-
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
-                box_width = max(0.0, x2 - x1)
-                box_height = max(0.0, y2 - y1)
-                box_area = box_width * box_height
-                area_ratio = box_area / image_area
+                pore_boxes_xyxy.append((x1, y1, x2, y2))
 
-                pore_area_ratios.append(round(area_ratio, 6))
+    union_area_ratio = _calculate_union_area_ratio(
+        pore_boxes_xyxy,
+        image_width,
+        image_height,
+    )
 
     return {
         "acne": {
@@ -86,17 +154,9 @@ def _parse_results(results, image_width: int, image_height: int) -> dict:
         "pore": {
             "count": len(pore_confidences),
             "confidences": pore_confidences,
-            "area_ratios": pore_area_ratios,
+            "union_area_ratio": union_area_ratio,
         },
     }
-
-
-def _severity_label(count: int) -> str:
-    if count < SEVERITY_THRESHOLDS[0]:
-        return "mild"
-    elif count < SEVERITY_THRESHOLDS[1]:
-        return "moderate"
-    return "severe"
 
 
 def analyze_skin_from_path(file_path: str) -> dict:
@@ -117,6 +177,10 @@ def analyze_skin_from_path(file_path: str) -> dict:
             raise ValueError("이미지를 읽을 수 없습니다.")
 
         processed_img = preprocess_image(original_img.copy())
+
+        if processed_img is None:
+            raise ValueError("전처리 결과 이미지가 비어 있습니다.")
+
         image_height, image_width = processed_img.shape[:2]
 
         model = get_model()
@@ -124,6 +188,12 @@ def analyze_skin_from_path(file_path: str) -> dict:
 
         if not results:
             raise ValueError("YOLO 추론 결과가 비어 있습니다.")
+
+        analysis_result = _parse_results(results, image_width, image_height)
+        scores = calculate_skin_score(analysis_result)
+
+        acne_count = analysis_result["acne"]["count"]
+        pore_count = analysis_result["pore"]["count"]
 
         annotated_img = results[0].plot()
         success, buffer = cv2.imencode(
@@ -136,12 +206,6 @@ def analyze_skin_from_path(file_path: str) -> dict:
 
         processed_image_base64 = base64.b64encode(buffer).decode("utf-8")
 
-        analysis_result = _parse_results(results, image_width, image_height)
-        acne_count = analysis_result["acne"]["count"]
-        pore_count = analysis_result["pore"]["count"]
-
-        scores = calculate_skin_score(analysis_result)
-
         return {
             "acne_score": scores["acne_score"],
             "pore_score": scores["pore_score"],
@@ -149,9 +213,9 @@ def analyze_skin_from_path(file_path: str) -> dict:
             "processed_image_base64": processed_image_base64,
             "detections": {
                 "acne_count": acne_count,
-                "acne_severity": _severity_label(acne_count),
+                "acne_severity": _score_to_severity(scores["acne_score"]),
                 "pore_count": pore_count,
-                "pore_severity": _severity_label(pore_count),
+                "pore_severity": _score_to_severity(scores["pore_score"]),
                 "affected_areas": [],
             },
         }
