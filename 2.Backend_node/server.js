@@ -1,3 +1,10 @@
+/*
+ * server.js — Express 서버 엔트리포인트
+ - 미들웨어 등록 (CORS, JSON, 쿠키)
+ - 라우터 등록 (/api)
+ - DB 연결 확인 (Pool 방식)
+*/
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -46,28 +53,3 @@ app.get('/', (_, res) => {
 app.listen(PORT, () => {
     console.log(`서버 실행 중: http://localhost:${PORT}`);
 });
-
-
-// 그레이스풀 셧다운
-
-// const gracefulShutdown = (signal) => {
-//     console.log(`${signal} 신호 수신 - 서버를 안전하게 종료합니다.`);
-
-//     server.close(() => {
-//         console.log('HTTP 서버 종료 완료');
-
-//         conn.end((err) => {
-//             if (err) console.error('DB 연결 종료 오류:', err);
-//             else console.log('DB 연결 종료 완료');
-//             process.exit(0);
-//         });
-//     });
-
-//     setTimeout(() => {
-//         console.error('강제 종료합니다.');
-//         process.exit(1);
-//     }, 10000);
-// };
-
-// process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-// process.on('SIGINT', () => gracefulShutdown('SIGINT'));
