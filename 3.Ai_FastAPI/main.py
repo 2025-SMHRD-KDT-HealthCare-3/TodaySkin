@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware  # ✅ 팀원꺼 추가
+from fastapi.middleware.cors import CORSMiddleware 
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from services.routine_generate import generate_routine
