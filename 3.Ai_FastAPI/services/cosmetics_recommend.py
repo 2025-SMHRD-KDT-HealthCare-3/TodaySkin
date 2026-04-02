@@ -1,49 +1,34 @@
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
+# ──────────────────────────────────────────────
+# * 화장품 추천 서비스 (cosmetics_recommend.py)
+# - 사용자 피부 상태 + 성분 분석 기반 맞춤 화장품 추천
+# - LangChain + OpenAI API 활용
+# - 보유하지 않은 카테고리 우선 추천
+# ──────────────────────────────────────────────
+
+
 import json
 import re
 import logging
 
-load_dotenv()
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+
+
 logger = logging.getLogger(__name__)
 
-llm = ChatOpenAI(model="gpt-5.4-mini", max_tokens=500)
+
+# ========== LLM 설정 ==========
+_llm = ChatOpenAI(model="gpt-5.4-mini", max_tokens=500)
 
 
-def format_cosmetics_for_ai(cosmetics: list) -> str:
-    if not cosmetics:
-        return "없음"
-    lines = []
-    for c in cosmetics:
-        lines.append(
-            f"- 제품명: {c['cos_name']} / 브랜드: {c['cos_brand']} / "
-            f"유형: {c['cos_type']} / 주요성분: {c['cos_ingredient']}"
-        )
-    return "\n".join(lines)
-
-
-def recommend_cosmetics(req):
-    try:
-        candidate_types = set(c["cos_type"] for c in (req.cosmetic_candidates or []))
-        owned = set(req.owned_categories or [])
-        missing_types = candidate_types - owned
-
-        
-        if not missing_types and not owned:
-            return {
-                "status": "success",
-                "data": {
-                    "recommendations": [],
-                    "message": "모든 카테고리의 화장품을 보유하고 있습니다."
-                }
-            }
-
-        candidates_text = format_cosmetics_for_ai(req.cosmetic_candidates)
-
-        prompt = ChatPromptTemplate.from_template(
-            """당신은 화장품 성분 분석 기반 추천 어드바이저입니다.
+# ========== 프롬프트 템플릿 ==========
+_prompt = ChatPromptTemplate.from_template(
+    """당신은 화장품 성분 분석 기반 추천 어드바이저입니다.
 성분표를 분석하여 사용자의 피부 상태에 가장 적합한 화장품을 추천합니다.
+
+[사용자 기본 정보]
+- 나이: {age}세
+- 성별: {gender}
 
 [사용자 피부 정보]
 - 피부 타입: {skin_type}
@@ -84,37 +69,68 @@ def recommend_cosmetics(req):
     ]
 }}""")
 
-        chain = prompt | llm
-        result = chain.invoke({
-            "skin_type": req.skin_type or "정보 없음",
-            "acne_score": req.acne_score,
-            "pore_score": req.pore_score,
-            "missing_categories": ", ".join(missing_types) if missing_types else "없음",
-            "owned_categories": ", ".join(owned) if owned else "없음",  
-            "candidates": candidates_text,
-        })
 
-        raw = result.content.strip()
-        raw = re.sub(r"```json|```", "", raw).strip()
-        parsed = json.loads(raw)
+# ========== 체인 구성 ==========
+_chain = _prompt | _llm
 
+
+# ========== 헬퍼 함수 ==========
+
+def _format_cosmetics_for_ai(cosmetics: list) -> str:
+    """화장품 목록을 AI 프롬프트용 텍스트로 변환"""
+    if not cosmetics:
+        return "없음"
+    lines = []
+    for c in cosmetics:
+        lines.append(
+            f"- 제품명: {c['cos_name']} / 브랜드: {c['cos_brand']} / "
+            f"유형: {c['cos_type']} / 주요성분: {c['cos_ingredient']}"
+        )
+    return "\n".join(lines)
+
+
+# ========== 화장품 추천 ==========
+
+def recommend_cosmetics(req):
+    """
+    화장품 추천 생성
+    - req: 사용자 요청 객체 (skin_type, 점수, 후보 목록, 보유 카테고리 포함)
+    - 보유하지 않은 카테고리 우선 → 성분 기반 추천
+    - JSON 파싱 실패 시 에러를 raise하여 글로벌 핸들러로 전달
+    """
+    candidate_types = set(c["cos_type"] for c in (req.cosmetic_candidates or []))
+    owned = set(req.owned_categories or [])
+    missing_types = candidate_types - owned
+
+    # 모든 카테고리 보유 시 빈 추천 반환
+    if not missing_types and owned:
         return {
             "status": "success",
             "data": {
-                "recommendations": parsed.get("recommendations", [])
+                "recommendations": [],
+                "message": "모든 카테고리의 화장품을 보유하고 있습니다."
             }
         }
 
-    except json.JSONDecodeError:
-        logger.error("화장품 추천 JSON 파싱 실패")
-        return {
-            "status": "error",
-            "data": {"message": "추천 결과 파싱에 실패했습니다. 다시 시도해주세요."}
-        }
+    candidates_text = _format_cosmetics_for_ai(req.cosmetic_candidates)
 
-    except Exception as e:
-        logger.error(f"화장품 추천 오류: {e}")
-        return {
-            "status": "error",
-            "data": {"message": "화장품 추천 중 오류가 발생했습니다."}
+    result = _chain.invoke({
+        "skin_type": req.skin_type or "정보 없음",
+        "acne_score": req.acne_score,
+        "pore_score": req.pore_score,
+        "missing_categories": ", ".join(missing_types) if missing_types else "없음",
+        "owned_categories": ", ".join(owned) if owned else "없음",
+        "candidates": candidates_text,
+    })
+
+    # LLM 응답 JSON 파싱
+    raw = result.content.strip()
+    raw = re.sub(r"```json|```", "", raw).strip()
+    parsed = json.loads(raw)
+
+    return {
+        "status": "success",
+        "data": {
+            "recommendations": parsed.get("recommendations", [])
         }
+    }

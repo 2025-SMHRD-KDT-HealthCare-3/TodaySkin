@@ -1,11 +1,18 @@
+/*
+ * chatbotRouter — AI 피부 상담 챗봇
+ - POST /api/chatbot/message  챗봇 메시지 전송
+*/
+
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const conn = require('../config/database'); 
+const conn = require('../config/database');
+const { FASTAPI_URL } = require('../config/apiConfig');
 const { requireLogin } = require('../middleware/auth');
 const { ValidationError } = require('../middleware/errorHandler');
 
-const FASTAPI_URL = process.env.FASTAPI_URL || 'http://127.0.0.1:8000';
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
+
 
 /*
     챗봇 메시지 전송 (POST)
@@ -54,12 +61,12 @@ router.post('/message', requireLogin, async (req, res, next) => {
                 user_no: Number(user_no),
                 skin_type: req.user.skin_type || "정보 없음",
                 acne_score: Number(info.acne_score) || 0, 
-                pore_score: Number(info.pore_score) || 0, // 
+                pore_score: Number(info.pore_score) || 0,
                 user_cosmetics: String(info.user_cosmetics || "정보 없음"),
-                // ✅ "기록 없음"이라는 한글은 FastAPI(Pydantic)에서 날짜 에러를 낼 수 있으므로 ""로 처리
+                // "기록 없음"은 FastAPI(Pydantic)에서 날짜 파싱 에러를 유발하므로 빈 문자열""로 처리
                 last_analysis_date: info.last_analysis_date === "기록 없음" ? "" : info.last_analysis_date,
             },
-            { timeout: 15000 } 
+            { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 15000 } 
         );
 
         // 3. 성공 응답

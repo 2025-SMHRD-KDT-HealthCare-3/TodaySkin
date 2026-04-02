@@ -58,32 +58,34 @@ export default function Chatbot() {
         setShowConcerns(false);
         setIsTyping(true);
 
-        /* TODO: 실제 API 연결 시 교체
-        const token = stored ? JSON.parse(stored).token : null;
-        const res = await fetch("/api/chatbot", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-                message: trimmed,
-                history: [...messages, userMsg],
-            }),
-        });
-        const result = await res.json();
-        const aiReply = result.data.reply;
-        */
+        try {
+            const res = await fetch("/api/chatbot/message", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ message: trimmed }),
+            });
+            const result = await res.json();
 
-        /* 더미 응답 — API 연결 전 임시 */
-        setTimeout(() => {
-            const aiReply = {
+            if (result.status === "success") {
+                setMessages((prev) => [...prev, {
+                    role: "assistant",
+                    content: result.data.answer,
+                }]);
+            } else {
+                setMessages((prev) => [...prev, {
+                    role: "assistant",
+                    content: "답변을 가져오지 못했어요. 다시 시도해주세요.",
+                }]);
+            }
+        } catch {
+            setMessages((prev) => [...prev, {
                 role: "assistant",
-                content: `${nickname}님의 고민을 분석 중이에요. AI 서버 연결 후 맞춤 답변을 드릴게요!`,
-            };
-            setMessages((prev) => [...prev, aiReply]);
+                content: "서버 연결에 실패했어요. 잠시 후 다시 시도해주세요.",
+            }]);
+        } finally {
             setIsTyping(false);
-        }, 1200);
+        }
     };
 
     /* 고민 태그 클릭 */
@@ -250,7 +252,7 @@ export default function Chatbot() {
                                     borderRadius: "50%",
                                     background: D.textLight,
                                     animation: `dotBounce 1.2s ${i * 0.2}s ease-in-out infinite`,
-                                }}/>
+                                }} />
                             ))}
                         </div>
                     </div>
@@ -303,9 +305,9 @@ export default function Chatbot() {
                     }}
                 >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-                         stroke={D.white} strokeWidth="2" strokeLinecap="round">
-                        <path d="M22 2L11 13"/>
-                        <path d="M22 2L15 22L11 13L2 9L22 2Z"/>
+                        stroke={D.white} strokeWidth="2" strokeLinecap="round">
+                        <path d="M22 2L11 13" />
+                        <path d="M22 2L15 22L11 13L2 9L22 2Z" />
                     </svg>
                 </button>
             </div>

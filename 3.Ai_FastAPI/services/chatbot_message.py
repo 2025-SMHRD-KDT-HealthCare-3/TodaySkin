@@ -1,41 +1,46 @@
 # ──────────────────────────────────────────────
-# 챗봇 서비스 (chatbot_service.py)
+# * 챗봇 서비스 (chatbot_message.py)
 # - 사용자 피부 상태 기반 맞춤 피부 상담 챗봇
 # - LangChain + OpenAI API 활용
-# - 세션별 대화 히스토리 유지
+# - 세션별 대화 히스토리 유지 (메모리 기반, 서버 재시작 시 초기화)
 # ──────────────────────────────────────────────
 
-from dotenv import load_dotenv
+
+import logging
+from datetime import datetime
+
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from datetime import datetime
-import logging
 
-load_dotenv()
+
 logger = logging.getLogger(__name__)
 
-# ── LLM 설정 ──
+
+# ========== LLM 설정 ==========
 # max_tokens: 3~4문장 답변 기준 500이면 충분
 llm = ChatOpenAI(model="gpt-5.4-mini", max_tokens=500)
 
-# ── 세션별 대화 히스토리 저장소 ──
+
+# ========== 세션별 대화 히스토리 ==========
 # key: user_no(문자열), value: InMemoryChatMessageHistory
-# ⚠️ 메모리 기반이라 서버 재시작 시 초기화됨 / 사용자 증가 시 메모리 관리 필요
-store = {}
+# ⚠️ 메모리 기반 — 서버 재시작 시 초기화 / 사용자 증가 시 메모리 관리 필요
+_store = {}
 
-def get_session_history(session_id: str):
+def _get_session_history(session_id: str):
     """세션 ID(user_no)로 대화 히스토리 조회, 없으면 새로 생성"""
-    if session_id not in store:
-        store[session_id] = InMemoryChatMessageHistory()
-    return store[session_id]
+    if session_id not in _store:
+        _store[session_id] = InMemoryChatMessageHistory()
+    return _store[session_id]
 
-# ── 프롬프트 템플릿 ──
-# 시스템 프롬프트: 역할 정의 + 사용자 컨텍스트 + 판단 기준 + 규칙
+
+# ========== 프롬프트 템플릿 ==========
+# system: 역할 정의 + 사용자 컨텍스트 + 판단 기준 + 규칙
 # history: 이전 대화 내역 (LangChain이 자동 주입)
 # input: 사용자의 현재 메시지
-chat_prompt = ChatPromptTemplate.from_messages([
+
+_chat_prompt = ChatPromptTemplate.from_messages([
     ("system", """당신은 피부 관리 전문 어드바이저 챗봇입니다.
 피부과학 지식을 바탕으로 친절하고 이해하기 쉽게 피부 고민을 상담해주며,
 사용자의 피부 상태에 맞는 관리 방법을 안내합니다.
@@ -72,50 +77,47 @@ chat_prompt = ChatPromptTemplate.from_messages([
     ("human", "{input}"),
 ])
 
-# ── 체인 구성 ──
-# chat_prompt → llm 파이프라인에 대화 히스토리 자동 관리 래핑
-chat_chain = chat_prompt | llm
 
-chat_with_history = RunnableWithMessageHistory(
-    chat_chain,
-    get_session_history,
+# ========== 체인 구성 ==========
+# 프롬프트 → LLM 파이프라인에 대화 히스토리 자동 관리 래핑
+_chat_chain = _chat_prompt | llm
+
+_chat_with_history = RunnableWithMessageHistory(
+    _chat_chain,
+    _get_session_history,
     input_messages_key="input",
     history_messages_key="history",
 )
+
+
+# ========== 챗봇 응답 생성 ==========
 
 def get_chat_response(req):
     """
     챗봇 응답 생성
     - req: 사용자 요청 객체 (message, user_no, 피부 정보 등 포함)
     - 사용자 컨텍스트를 프롬프트 변수에 주입하고, 세션 히스토리 기반으로 응답 생성
+    - 에러 발생 시 글로벌 에러 핸들러로 전달 (main.py)
     """
-    try:
-        # user_no를 세션 ID로 사용 → 사용자별 대화 히스토리 분리
-        config = {"configurable": {"session_id": str(req.user_no)}}
+    config = {"configurable": {"session_id": str(req.user_no)}}
 
-        response = chat_with_history.invoke(
-            {
-                "input": req.message,
-                "skin_type": req.skin_type or "정보 없음",
-                "acne_score": req.acne_score,
-                "pore_score": req.pore_score,
-                "compliance_rate": req.compliance_rate,
-                "user_cosmetics": req.user_cosmetics or "없음",
-                "last_analysis_date": req.last_analysis_date or "분석 기록 없음",
-            },
-            config=config
-        )
+    response = _chat_with_history.invoke(
+        {
+            "input": req.message,
+            "skin_type": req.skin_type or "정보 없음",
+            "acne_score": req.acne_score,
+            "pore_score": req.pore_score,
+            "compliance_rate": req.compliance_rate,
+            "user_cosmetics": req.user_cosmetics or "없음",
+            "last_analysis_date": req.last_analysis_date or "분석 기록 없음",
+        },
+        config=config
+    )
 
-        return {
-            "status": "success",
-            "data": {
-                "answer": response.content,
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
+    return {
+        "status": "success",
+        "data": {
+            "answer": response.content,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-    except Exception as e:
-        logger.error(f"챗봇 응답 오류: {e}")
-        return {
-            "status": "error",
-            "data": {"message": "챗봇 응답 중 오류가 발생했습니다."}
-        }
+    }

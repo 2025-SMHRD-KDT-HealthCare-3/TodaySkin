@@ -1,8 +1,18 @@
+/*
+ * challengeRouter — 챌린지 관리
+ - POST  /api/challenge            챌린지 생성 (기존 진행 중 자동 중단)
+ - GET   /api/challenge            현재 챌린지 조회 (종료일 지나면 자동 완료)
+ - PATCH /api/challenge/stop       챌린지 수동 종료
+ - GET   /api/challenge/history    지난 챌린지 기록 조회
+ - GET   /api/challenge/:chal_no   특정 챌린지 상세 + 달성률
+*/
+
 const express = require('express');
 const router = express.Router();
 const conn = require('../config/database');
 const { requireLogin } = require('../middleware/auth');
 const { ValidationError } = require('../middleware/errorHandler');
+
 
 /*
     챌린지 생성 
@@ -68,6 +78,7 @@ router.post('/', requireLogin, async (req, res, next) => {
     }
 });
 
+
 /*
    - 현재 진행 중인 챌린지 조회 
    - (GET /api/challenge)
@@ -88,7 +99,7 @@ router.get('/', requireLogin, async (req, res, next) => {
         `, [today, user_no]);
 
         if (results.length === 0) {
-            return res.status(404).json({ status: "success", data: null, message: "진행 중인 챌린지가 없습니다." });
+            return res.json({ status: "success", data: null, message: "진행 중인 챌린지가 없습니다." });
         }
 
         const challenge = results[0];
@@ -115,6 +126,7 @@ router.get('/', requireLogin, async (req, res, next) => {
     }
 });
 
+
 /*
     챌린지 수동 종료
     (PATCH /api/challenge/stop)
@@ -134,6 +146,7 @@ router.patch('/stop', requireLogin, async (req, res, next) => {
     }
 });
 
+
 /*
     지난 챌린지 기록 조회 
     (GET /api/challenge/history)
@@ -152,6 +165,7 @@ router.get('/history', requireLogin, async (req, res, next) => {
         next(error);
     }
 });
+
 
 /*
     특정 챌린지 상세 및 달성률 조회 

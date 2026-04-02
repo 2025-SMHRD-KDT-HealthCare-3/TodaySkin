@@ -18,16 +18,23 @@
 - 얼굴 크롭은 "감지되면 무조건"이 아니라 "조건을 만족할 때만" 적용한다
 """
 
-# 3.Ai_FastAPI/utils/preprocess.py
 
-from io import BytesIO
+import os
 import logging
+import tempfile
+import shutil
+from io import BytesIO
 
 import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
+
 logger = logging.getLogger(__name__)
+
+# ============================================================
+# 상수 설정
+# ============================================================
 
 MAX_SIZE = 1280
 MIN_IMAGE_SIZE = 64
@@ -37,17 +44,35 @@ CLAHE_BRIGHTNESS_THRESHOLD = 180
 
 # 얼굴 크롭 관련 설정
 FACE_PAD_RATIO = 0.20              # 얼굴 박스 기준 여백 비율 (20%)
-MIN_FACE_AREA_RATIO = 0.08         # 얼굴 박스가 전체 이미지 면적의 최소 8% 이상일 때만 사용
-MAX_EDGE_TOUCH_RATIO = 0.02        # 얼굴 박스가 이미지 가장자리에 너무 붙어 있으면 크롭하지 않음
+MIN_FACE_AREA_RATIO = 0.08         # 얼굴이 전체 이미지 면적의 최소 8% 이상일 때만 크롭
+MAX_EDGE_TOUCH_RATIO = 0.02        # 얼굴이 가장자리에 너무 붙어 있으면 크롭하지 않음
 MIN_CROP_SIZE = 160                # 크롭 결과 최소 크기
 FACE_DETECT_SCALE_FACTOR = 1.1
 FACE_DETECT_MIN_NEIGHBORS = 5
 
-# OpenCV 기본 제공 정면 얼굴 감지기
-_face_cascade = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-)
 
+# ======================================================================================
+# 얼굴 감지기 초기화 (모듈 로딩 시 1회)
+# - OpenCV C++이 한글 경로를 읽지 못하는 문제 우회
+# - cv2 패키지 내 XML을 시스템 임시 폴더(영문 경로)로 복사 후 로드
+# - tempfile.gettempdir()은 `C:\Users\SMHRD-\AppData\Local\Temp` 같은 경로를 반환
+# - 작업 흐름 : 서버 시작 → Python이 utils/XML을 Temp 폴더로 복사 (한글 경로 → 영문 경로)
+#              → OpenCV가 Temp 폴더의 XML 로드 → 성공
+# ======================================================================================
+
+_cascade_src = os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml')
+_cascade_tmp = os.path.join(tempfile.gettempdir(), 'haarcascade_frontalface_default.xml')
+
+# 임시 폴더에 없으면 복사 (Python은 한글 경로 복사 가능)
+if not os.path.exists(_cascade_tmp):
+    shutil.copy2(_cascade_src, _cascade_tmp)
+
+_face_cascade = cv2.CascadeClassifier(_cascade_tmp)
+
+
+# ============================================================
+# 이미지 변환 · 검증
+# ============================================================
 
 def bytes_to_cv2_image(image_bytes: bytes | bytearray) -> np.ndarray:
     """
@@ -107,6 +132,10 @@ def validate_image(img: np.ndarray) -> None:
         )
 
 
+# ============================================================
+# 얼굴 크롭
+# ============================================================
+
 def _get_unreliable_face_reason(
     img_shape: tuple[int, int, int],
     x: int,
@@ -117,11 +146,16 @@ def _get_unreliable_face_reason(
     """
     얼굴 박스가 실서비스용 크롭에 적합하지 않으면 사유를 문자열로 반환합니다.
     적합하면 None을 반환합니다.
+
+    검사 항목:
+    - 얼굴 면적이 전체 이미지 대비 너무 작은지
+    - 얼굴 박스가 이미지 가장자리에 붙어 있는지 (상하좌우)
     """
     img_h, img_w = img_shape[:2]
     img_area = img_h * img_w
     face_area = w * h
 
+    # 얼굴 면적 비율 검사
     face_area_ratio = face_area / img_area
     if face_area_ratio < MIN_FACE_AREA_RATIO:
         return (
@@ -130,32 +164,21 @@ def _get_unreliable_face_reason(
             f" < min_ratio={MIN_FACE_AREA_RATIO:.4f}"
         )
 
+    # 가장자리 접촉 검사
     edge_margin_x = int(img_w * MAX_EDGE_TOUCH_RATIO)
     edge_margin_y = int(img_h * MAX_EDGE_TOUCH_RATIO)
 
     if x <= edge_margin_x:
-        return (
-            f"face_touches_left_edge:"
-            f" x={x}, edge_margin_x={edge_margin_x}"
-        )
+        return f"face_touches_left_edge: x={x}, edge_margin_x={edge_margin_x}"
 
     if y <= edge_margin_y:
-        return (
-            f"face_touches_top_edge:"
-            f" y={y}, edge_margin_y={edge_margin_y}"
-        )
+        return f"face_touches_top_edge: y={y}, edge_margin_y={edge_margin_y}"
 
     if (x + w) >= (img_w - edge_margin_x):
-        return (
-            f"face_touches_right_edge:"
-            f" right={x + w}, limit={img_w - edge_margin_x}"
-        )
+        return f"face_touches_right_edge: right={x + w}, limit={img_w - edge_margin_x}"
 
     if (y + h) >= (img_h - edge_margin_y):
-        return (
-            f"face_touches_bottom_edge:"
-            f" bottom={y + h}, limit={img_h - edge_margin_y}"
-        )
+        return f"face_touches_bottom_edge: bottom={y + h}, limit={img_h - edge_margin_y}"
 
     return None
 
@@ -165,16 +188,11 @@ def crop_face(img: np.ndarray, pad_ratio: float = FACE_PAD_RATIO) -> np.ndarray:
     얼굴 영역을 감지하여, 신뢰 가능한 경우에만 크롭합니다.
 
     동작 방식:
-    - 얼굴 감지 실패: 원본 반환
-    - 여러 얼굴 감지 시: 가장 큰 얼굴 선택
-    - 얼굴 박스가 너무 작거나 가장자리에 붙어 있으면 원본 반환
-    - 크롭 결과가 너무 작으면 원본 반환
-    - 최종적으로만 얼굴 크롭 적용
-
-    로그:
-    - 얼굴 감지 실패
-    - 원본 유지 사유
-    - 크롭 적용 여부
+    1. 얼굴 감지 실패 → 원본 반환
+    2. 여러 얼굴 감지 시 → 가장 큰 얼굴 선택
+    3. 얼굴 박스가 너무 작거나 가장자리에 붙어 있으면 → 원본 반환
+    4. 크롭 결과가 너무 작으면 → 원본 반환
+    5. 조건 통과 시에만 얼굴 크롭 적용
     """
     if img is None or not isinstance(img, np.ndarray):
         raise TypeError(
@@ -233,7 +251,7 @@ def crop_face(img: np.ndarray, pad_ratio: float = FACE_PAD_RATIO) -> np.ndarray:
 
     cropped = img[y1:y2, x1:x2]
 
-    # 5. 크롭 결과가 비정상이면 원본 유지
+    # 5. 크롭 결과 검증
     if cropped.size == 0:
         logger.warning(
             "[crop_face] fallback_to_original reason=empty_cropped_result "
@@ -270,6 +288,10 @@ def crop_face(img: np.ndarray, pad_ratio: float = FACE_PAD_RATIO) -> np.ndarray:
     return cropped
 
 
+# ============================================================
+# 리사이즈 · CLAHE
+# ============================================================
+
 def resize_if_needed(img: np.ndarray, max_size: int = MAX_SIZE) -> np.ndarray:
     """
     큰 이미지만 비율 유지 축소합니다.
@@ -304,7 +326,7 @@ def resize_if_needed(img: np.ndarray, max_size: int = MAX_SIZE) -> np.ndarray:
 def apply_clahe(img: np.ndarray, clip_limit: float = CLAHE_CLIP_LIMIT) -> np.ndarray:
     """
     LAB 색공간의 L 채널에만 CLAHE를 적용합니다.
-    단, 너무 밝은 이미지는 스킵하여 불필요한 과장을 줄입니다.
+    단, 평균 밝기가 임계값을 초과하면 스킵하여 불필요한 과장을 방지합니다.
     """
     if img is None or not isinstance(img, np.ndarray):
         raise TypeError(
@@ -332,13 +354,17 @@ def apply_clahe(img: np.ndarray, clip_limit: float = CLAHE_CLIP_LIMIT) -> np.nda
     return result
 
 
+# ============================================================
+# 메인 전처리 파이프라인
+# ============================================================
+
 def preprocess_image(
     img: np.ndarray,
     use_clahe: bool = True,
     use_face_crop: bool = True
 ) -> np.ndarray:
     """
-    YOLO 피부 분석용 실서비스 전처리
+    YOLO 피부 분석용 전처리 파이프라인
 
     순서:
         1. 입력 검증
@@ -348,12 +374,8 @@ def preprocess_image(
 
     Args:
         img: OpenCV BGR 이미지
-        use_clahe:
-            - True : 기본값. 조명 불균일 보정 적용
-            - False: 원본보존형
-        use_face_crop:
-            - True : 기본값. 안전장치 통과 시에만 얼굴 크롭
-            - False: 얼굴 크롭 비활성화
+        use_clahe: True면 조명 불균일 보정 적용 (기본값: True)
+        use_face_crop: True면 안전장치 통과 시 얼굴 크롭 (기본값: True)
     """
     validate_image(img)
 

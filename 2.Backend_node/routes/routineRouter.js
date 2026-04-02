@@ -1,11 +1,19 @@
+/*
+ * routineRouter — 루틴 관리
+ - GET   /api/routine          루틴 조회 (없으면 AI 생성)
+ - PATCH /api/routine/:action_no 루틴 체크 (완료/미완료 토글)
+*/
+
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const conn = require('../config/database'); 
+const conn = require('../config/database');
+const { FASTAPI_URL } = require('../config/apiConfig');
 const { ValidationError } = require('../middleware/errorHandler');
 const { requireLogin } = require('../middleware/auth');
 
-const FASTAPI_URL = process.env.FASTAPI_URL || 'http://127.0.0.1:8000';
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
+
 
 // 1. 루틴 저장 헬퍼
 async function saveRoutineToDB(user_no, chal_no, routineData) {
@@ -99,7 +107,7 @@ router.get('/', requireLogin, async (req, res, next) => {
         const needNewRoutine = day_count === 1 || day_count === 8;
 
         if (needNewRoutine) {
-            // 🚩 [중복 방지] 오늘 이미 생성된 루틴 데이터가 있다면 먼저 삭제 (멱등성 보장)
+            // 오늘 이미 생성된 루틴 데이터가 있으면 먼저 삭제 (멱등성 보장)
             await conn.query(`
                 DELETE a FROM actions a
                 JOIN challenge_details cd ON a.detail_no = cd.detail_no
@@ -135,8 +143,13 @@ router.get('/', requireLogin, async (req, res, next) => {
                     [user_no]
                 );
                 if (prevAnalyses.length === 2) {
-                    const prevTotal = (prevAnalyses[1].acne_score + prevAnalyses[1].pore_score) / 2;
-                    const currTotal = (prevAnalyses[0].acne_score + prevAnalyses[0].pore_score) / 2;
+                    const [prevAnalyses] = await conn.query(
+                        "SELECT total_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no WHERE u.user_no = ? ORDER BY a.created_at DESC LIMIT 2",
+                        [user_no]
+                    );
+                    if (prevAnalyses.length === 2) {
+                        total_score_change = Number((prevAnalyses[0].total_score - prevAnalyses[1].total_score).toFixed(1));
+                    }
                     total_score_change = Number((currTotal - prevTotal).toFixed(1));
                 }
                 const rates = await getCumulativeRate(user_no, chal_no);
@@ -156,7 +169,7 @@ router.get('/', requireLogin, async (req, res, next) => {
                 cosmetic_candidates: candidatesText,
                 total_score_change: total_score_change,
                 compliance_rate: Number(compliance_rate)
-            }, { timeout: 60000 });
+            }, { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 60000 });
 
             const routine = pythonRes.data.data.routine;
             if (!routine) throw new ValidationError("AI 루틴 생성에 실패했습니다.", 500);

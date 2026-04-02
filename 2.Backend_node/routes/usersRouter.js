@@ -1,3 +1,13 @@
+/*
+ * usersRouter — 회원 관리
+ - POST   /api/users/join     회원가입
+ - POST   /api/users/login    로그인 (쿠키 방식)
+ - POST   /api/users/logout   로그아웃
+ - GET    /api/users/my       회원정보 조회
+ - PUT    /api/users/my       회원정보 수정
+ - DELETE /api/users/my       회원탈퇴
+*/
+
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -10,12 +20,11 @@ const { requireLogin } = require('../middleware/auth');
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
 
+
 /*
     회원가입
     POST /api/users/join
 */
-
-
 router.post('/join', async (req, res, next) => {
     try {
         const { id, pwd, birthdate, gender, nick, skin_type } = req.body;
@@ -37,6 +46,7 @@ router.post('/join', async (req, res, next) => {
     }
 });
 
+
 /*
     로그인 (쿠키 방식)
     POST /api/users/login
@@ -55,7 +65,7 @@ router.post('/login', async (req, res, next) => {
 
         const user = results[0];
 
-        // ✅ [추가] 생년월일 기반 나이 계산 (한국 나이 기준)
+        // 생년월일 기반 나이 계산 (한국 나이 기준)
         const birthYear = new Date(user.birthdate).getFullYear();
         const currentYear = new Date().getFullYear();
         const age = currentYear - birthYear + 1;
@@ -75,7 +85,7 @@ router.post('/login', async (req, res, next) => {
         // 쿠키에 저장
         res.cookie('token', token, {
             httpOnly: true,
-            secure: false, 
+            secure: process.env.NODE_ENV === 'production', 
             sameSite: 'lax', 
             maxAge: 7 * 24 * 60 * 60 * 1000 
         });
@@ -89,23 +99,21 @@ router.post('/login', async (req, res, next) => {
     }
 });
 
+
 /*
     로그아웃
     POST /api/users/logout
 */
-
-
 router.post('/logout', requireLogin, (req, res) => {
     res.clearCookie('token');
     res.json({ status: "success", data: { message: "로그아웃 완료" } });
 });
 
+
 /*
     회원정보 조회
     GET /api/users/my
 */
-
-
 router.get('/my', requireLogin, async (req, res, next) => {
     try {
         const [results] = await conn.query(
@@ -120,6 +128,7 @@ router.get('/my', requireLogin, async (req, res, next) => {
         next(error);
     }
 });
+
 
 /*
     회원정보 수정
@@ -182,11 +191,11 @@ router.put('/my', requireLogin, async (req, res, next) => {
     }
 });
 
+
 /*
     회원탈퇴
     DELETE /api/users/my
 */
-
 router.delete('/my', requireLogin, async (req, res, next) => {
     try {
         const { pwd } = req.body;

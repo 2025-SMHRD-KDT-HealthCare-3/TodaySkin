@@ -1,11 +1,19 @@
+/*
+ * reportRouter — 리포트 관리
+ - GET /api/reports/daily              데일리 리포트 조회 (AI 코멘트 포함)
+ - GET /api/reports/challenge/:chal_no 챌린지 피부 변화 리포트
+*/
+
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const conn = require('../config/database');
+const { FASTAPI_URL } = require('../config/apiConfig');
 const { requireLogin } = require('../middleware/auth');
 const { ValidationError } = require('../middleware/errorHandler');
 
-const FASTAPI_URL = process.env.FASTAPI_URL || 'http://localhost:8000';
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
+
 
 /*
     데일리 리포트 조회 
@@ -30,8 +38,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
 
         // 오늘 분석 데이터 확인
         const [todayResults] = await conn.query(`
-            SELECT a.acne_score, a.pore_score, a.wrinkle_score,
-                ROUND((a.acne_score + a.pore_score + a.wrinkle_score) / 3, 1) AS total_score,
+            SELECT a.acne_score, a.pore_score, a.total_score,
                 DATE(u.uploaded_at) AS report_date
             FROM img_analyses a
             JOIN uploads u ON a.upload_no = u.upload_no
@@ -61,7 +68,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
 
             // 이전 분석 데이터 조회 
             const [prevResults] = await conn.query(`
-                SELECT ROUND((a.acne_score + a.pore_score + a.wrinkle_score) / 3, 1) AS total_score
+                SELECT total_score
                 FROM img_analyses a
                 JOIN uploads u ON a.upload_no = u.upload_no
                 WHERE u.user_no = ? AND DATE(u.uploaded_at) < ?
@@ -73,13 +80,13 @@ router.get('/daily', requireLogin, async (req, res, next) => {
             //  FastAPI 한줄 코멘트 요청 
             try {
                 const commentRes = await axios.post(
-                    `${FASTAPI_URL}/api/report/daily-comment`,
+                    `${FASTAPI_URL}/api/report/comment`,
                     {
                         skin_type: req.user.skin_type || "정보 없음",
                         total_score: Number(analysis.total_score),
                         prev_total_score: Number(prev_total_score)
                     },
-                    { timeout: 8000 }
+                    { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 8000 }
                 );
 
                 if (commentRes.data && commentRes.data.status === 'success') {
@@ -103,7 +110,6 @@ router.get('/daily', requireLogin, async (req, res, next) => {
                             total_score: analysis.total_score,
                             acne_score: analysis.acne_score,
                             pore_score: analysis.pore_score,
-                            wrinkle_score: analysis.wrinkle_score,
                             line_comment,
                             daily_rate,
                             cumulative_rate,
@@ -121,8 +127,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
 
         // 오늘 분석 없으면 최근 데이터 반환
         const [latestResults] = await conn.query(`
-            SELECT a.acne_score, a.pore_score, a.wrinkle_score,
-                ROUND((a.acne_score + a.pore_score + a.wrinkle_score) / 3, 1) AS total_score,
+            SELECT a.acne_score, a.pore_score, a.total_score,
                 DATE(u.uploaded_at) AS report_date
             FROM img_analyses a
             JOIN uploads u ON a.upload_no = u.upload_no
@@ -151,6 +156,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
     }
 });
 
+
 /* 
    피부 변화 리포트 조회
   (GET /api/reports/challenge/:chal_no)
@@ -173,9 +179,7 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
 
         // 첫날 vs 최신 이미지 및 점수 조회
         const query = `
-            SELECT a.acne_score, a.pore_score, a.wrinkle_score,
-                ROUND((a.acne_score + a.pore_score + a.wrinkle_score) / 3, 1) AS total_score,
-                a.processing_img, a.created_at
+            SELECT a.acne_score, a.pore_score, a.total_score, a.processing_img, a.created_at
             FROM img_analyses a
             JOIN uploads u ON a.upload_no = u.upload_no
             WHERE u.user_no = ? AND u.uploaded_at >= ?

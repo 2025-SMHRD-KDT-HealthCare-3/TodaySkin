@@ -34,7 +34,6 @@ router.get('/search', requireLogin, async (req, res, next) => {
             FROM cosmetics
             WHERE cos_name LIKE ? OR cos_brand LIKE ?
             ORDER BY cos_name ASC
-            LIMIT 20
         `;
         const searchTerm = `%${keyword.trim()}%`;
         const [results] = await conn.query(sql, [searchTerm, searchTerm]);
@@ -68,7 +67,7 @@ router.get('/recommend', requireLogin, async (req, res, next) => {
             WHERE uc.user_no = ? AND uc.source = '추천'
             ORDER BY uc.created_at DESC
         `;
-        const [results] = await conn.query(sql, [user_no, user_no]);
+        const [results] = await conn.query(sql, [user_no]);
 
         res.json({
             status: "success",
@@ -134,9 +133,9 @@ router.post('/user-cosmetics', requireLogin, async (req, res, next) => {
         );
 
         if (existing.length > 0) {
-            // ✅ Case A: AI가 추천해서 이미 '추천' 상태로 들어있는 경우
+            // Case A: AI가 추천해서 이미 '추천' 상태로 들어있는 경우
             if (existing[0].source === '추천') {
-                // 새로운 행을 만들지 않고, 기존 행을 '보유'로 업데이트합니다.
+                // 새로운 행을 만들지 않고, 기존 행을 '보유'로 업데이트
                 await conn.query(
                     "UPDATE user_cosmetics SET source = '보유', expired_at = ? WHERE ucos_no = ?",
                     [expired_at || null, existing[0].ucos_no]
@@ -147,7 +146,7 @@ router.post('/user-cosmetics', requireLogin, async (req, res, next) => {
                 });
             } 
             
-            // ✅ Case B: 이미 '보유' 중인 경우 (중복 등록 방지)
+            // Case B: 이미 '보유' 중인 경우 -> 중복 등록 방지
             throw new ValidationError("이미 보관함에 등록된 화장품입니다.");
         }
 
