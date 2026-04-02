@@ -23,16 +23,13 @@ export default function ProfileView() {
 
     /*
      - 페이지 로딩 시 내 정보 조회
-     - 로그인 시 저장한 토큰을 함께 보내서 본인 확인 후 유저 데이터 수신
+     - 쿠키에 저장된 토큰을 함께 보내서 본인 확인 후 유저 데이터 수신
     */
     useEffect(() => {
         const fetchUser = async () => {
             try {
-                const stored = localStorage.getItem("user");
-                const token = stored ? JSON.parse(stored).token : null;
-
                 const res = await fetch("/api/users/my", {
-                    headers: { Authorization: `Bearer ${token}` },
+                    credentials: "include",
                 });
                 const result = await res.json();
                 if (result.status === "success") {
@@ -73,14 +70,11 @@ export default function ProfileView() {
         }
 
         try {
-            const stored = localStorage.getItem("user");
-            const token = stored ? JSON.parse(stored).token : null;
-
             const res = await fetch("/api/users/my", {
                 method: "DELETE",
+                credentials: "include",
                 headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({ pwd: withdrawPwd }),
             });

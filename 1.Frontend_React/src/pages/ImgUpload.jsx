@@ -136,14 +136,6 @@ export default function ImgUpload() {
     const handleAnalyze = async () => {
         if (!selectedFile) return;
 
-        const userData = localStorage.getItem("user");
-        const token = userData ? JSON.parse(userData).token : null;
-        if (!token) {
-            alert("로그인이 필요합니다.");
-            navigate("/");
-            return;
-        }
-
         analysisResultRef.current = null;
         loadingDoneRef.current = false;
         setIsLoading(true);
@@ -154,7 +146,7 @@ export default function ImgUpload() {
 
             const res = await fetch("/api/skin/analyze", {
                 method: "POST",
-                headers: { Authorization: `Bearer ${token}` },
+                credentials: "include",
                 body: formData,
             });
             const result = await res.json();

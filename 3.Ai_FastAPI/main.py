@@ -6,6 +6,7 @@ from services.routine_generate import generate_routine
 from services.chatbot_message import get_chat_response
 from services.cosmetics_recommend import recommend_cosmetics
 from services.report_comment import generate_daily_comment
+from services.skin_analyze import analyze_skin_from_path
 
 load_dotenv()
 
@@ -46,6 +47,19 @@ class RoutineRequest(BaseModel):
 @app.post("/api/routine/generate")
 def create_routine(req: RoutineRequest):
     return generate_routine(req)
+
+# ========== 이미지 분석 ==========
+@app.post("/analyze")
+def skin_analyze(req: SkinAnalyzeRequest):
+    # Node.js에서 보낸 file_path 하나만 인자로 전달합니다.
+    # (보내주신 skin_analyze.py의 analyze_skin_from_path 함수 정의에 맞춤)
+    result = analyze_skin_from_path(req.file_path)
+    
+    # Node.js가 기대하는 { status: "success", data: ... } 형태로 감싸서 반환합니다.
+    return {
+        "status": "success",
+        "data": result
+    }
 
 # ========== 챗봇 ==========
 class ChatRequest(BaseModel):

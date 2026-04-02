@@ -16,7 +16,6 @@ import CTAButton from "../components/CTAButton";
 export default function CosManage() {
     const navigate = useNavigate();
     const stored = localStorage.getItem("user");
-    const token = stored ? JSON.parse(stored).token : null;
     const nickname = stored ? JSON.parse(stored).nick : "";
 
     /* ── 검색 관련 state ── */
@@ -40,9 +39,9 @@ export default function CosManage() {
     const apiFetch = async (url, options = {}) => {
         const res = await fetch(url, {
             ...options,
+            credentials: "include",
             headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
                 ...options.headers,
             },
         });
@@ -52,9 +51,7 @@ export default function CosManage() {
     /* ── 내 화장품 목록 조회 ── */
     const fetchMyCosmetics = async () => {
         try {
-            console.log("토큰:", token);
             const result = await apiFetch("/api/cosmetics/user-cosmetics");
-            console.log("API 응답:", result);  // ← 이거 추가
             if (result.status === "success") {
                 setMyCosmetics(result.data.list || []);
             }

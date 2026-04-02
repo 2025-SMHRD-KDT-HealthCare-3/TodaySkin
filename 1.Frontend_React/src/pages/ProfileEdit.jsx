@@ -37,11 +37,8 @@ export default function ProfileEdit() {
     useEffect(() => {
         const fetchUser = async () => {
             try {
-                const stored = localStorage.getItem("user");
-                const token = stored ? JSON.parse(stored).token : null;
-
                 const res = await fetch("/api/users/my", {
-                    headers: { Authorization: `Bearer ${token}` },
+                    credentials: "include",
                 });
                 const result = await res.json();
                 if (result.status === "success") {
@@ -85,7 +82,6 @@ export default function ProfileEdit() {
 
         try {
             const stored = localStorage.getItem("user");
-            const token = stored ? JSON.parse(stored).token : null;
 
             /* 전송 데이터 구성 — 비밀번호는 입력한 경우에만 포함 */
             const body = { nick, skin_type };
@@ -96,9 +92,9 @@ export default function ProfileEdit() {
 
             const res = await fetch("/api/users/my", {
                 method: "PUT",
+                credentials: "include",
                 headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify(body),
             });
