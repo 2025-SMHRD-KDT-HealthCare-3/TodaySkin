@@ -5,7 +5,7 @@
 */
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { D } from "../styles/design";
 import CTAButton from "../components/CTAButton";
 import FormInput from "../components/FormInput";
@@ -13,7 +13,10 @@ import LeafIcon from "../assets/Leaf.png";
 import LoginBImg from "../assets/Login_bottom.png";
 
 export default function Login({ onLoginSuccess }) {
+
     const navigate = useNavigate();
+    const location = useLocation();
+
     const [id, setId] = useState("");
     const [pwd, setPwd] = useState("");
 
@@ -35,7 +38,9 @@ export default function Login({ onLoginSuccess }) {
             if (result.status === "success") {
                 localStorage.setItem("user", JSON.stringify(result.data));
                 onLoginSuccess?.();
-                navigate("/");
+
+                const from = location.state?.from || "/";
+                navigate(from, { replace: true });
             } else {
                 alert(result.data.message);
             }

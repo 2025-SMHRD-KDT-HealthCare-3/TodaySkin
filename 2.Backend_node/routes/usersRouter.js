@@ -76,7 +76,7 @@ router.post('/login', async (req, res, next) => {
 
         res.json({
             status: "success",
-            data: { user_no: user.user_no, nick: user.nick }
+            data: { user_no: user.user_no, nick: user.nick, token }
         });
     } catch (error) {
         next(error);

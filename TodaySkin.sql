@@ -1,5 +1,36 @@
 USE sc_25K_HI3_p2_1;
 
+-- 외래키 연결 한 번에 확인하는 SQL: 현재 스키마 안의 FK 관계를 전부 보여줌
+SELECT
+    TABLE_NAME AS child_table,
+    COLUMN_NAME AS child_column,
+    REFERENCED_TABLE_NAME AS parent_table,
+    REFERENCED_COLUMN_NAME AS parent_column,
+    CONSTRAINT_NAME
+FROM information_schema.KEY_COLUMN_USAGE
+WHERE TABLE_SCHEMA = DATABASE()
+  AND REFERENCED_TABLE_NAME IS NOT NULL
+ORDER BY parent_table, child_table;
+
+
+-- FK 관계에 따른 테이블 연결 순서
+-- 필요시 최하위 자식테이블부터 부모순으로 데이터 삭제
+SET FOREIGN_KEY_CHECKS = 0;
+
+TRUNCATE TABLE daily_reports;
+TRUNCATE TABLE actions;
+TRUNCATE TABLE challenge_details;
+TRUNCATE TABLE img_analyses;
+TRUNCATE TABLE routines;
+TRUNCATE TABLE user_cosmetics;
+TRUNCATE TABLE challenges;
+TRUNCATE TABLE uploads;
+TRUNCATE TABLE cosmetics;
+TRUNCATE TABLE users;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
+
 -- 1. users 테이블 생성 
 CREATE TABLE users
 (
@@ -216,7 +247,7 @@ CREATE TABLE img_analyses
     anls_result     TEXT           NOT NULL    COMMENT '분석 결과',
     acne_score      NUMERIC(5,2)   NOT NULL    DEFAULT 0.0 COMMENT '여드름 점수',
     pore_score      NUMERIC(5,2)   NOT NULL    DEFAULT 0.0 COMMENT '모공 점수',
-    wrinkle_score   NUMERIC(5,2)   NOT NULL    DEFAULT 0.0 COMMENT '주름 점수',
+    total_score     NUMERIC(5,2)   NOT NULL    DEFAULT 0.0 COMMENT '전체 점수',
     processing_img  VARCHAR(255)   NOT NULL    COMMENT '참고 파일 명',
     created_at      DATETIME       NOT NULL    DEFAULT NOW() COMMENT '분석 날짜',
 	PRIMARY KEY (anls_no)
@@ -241,11 +272,12 @@ ALTER TABLE img_analyses
 -- 9. user_cosmetics 테이블 생성
 CREATE TABLE user_cosmetics
 (
-    ucos_no     INT        NOT NULL    AUTO_INCREMENT COMMENT '보유 고유번호',
-    user_no     INT        NOT NULL    COMMENT '회원 고유번호',
-    cos_no      INT        NOT NULL    COMMENT '화장품 고유번호',
-    expired_at  DATE       NOT NULL    COMMENT '유통기한',
-    created_at  DATETIME   NOT NULL    DEFAULT NOW() COMMENT '등록 일자',
+    ucos_no     INT          NOT NULL    AUTO_INCREMENT COMMENT '보유 고유번호',
+    user_no     INT          NOT NULL    COMMENT '회원 고유번호',
+    cos_no      INT          NOT NULL    COMMENT '화장품 고유번호',
+    source      VARCHAR(10)  NOT NULL    DEFAULT '보유' COMMENT '보유 여부',
+    expired_at  DATE         NOT NULL    COMMENT '유통기한',
+    created_at  DATETIME     NOT NULL    DEFAULT NOW() COMMENT '등록 일자',
 	PRIMARY KEY (ucos_no)
 );
 

@@ -10,7 +10,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
 // ============================================================
 
 const requireLogin = (req, res, next) => {
-    const token = req.cookies?.token; // 쿠키에서 토큰 꺼내기
+    const authHeader = req.headers.authorization;
+    const token = (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null)
+                  || req.cookies?.token;
 
     if (!token) {
         return next(new ValidationError("로그인이 필요합니다.", 401));
