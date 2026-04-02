@@ -62,7 +62,7 @@ router.get('/recommend', requireLogin, async (req, res, next) => {
         /* 진행 중인 챌린지의 루틴에 필요하지만 미보유 중인 화장품 */
         const sql = `
             SELECT DISTINCT
-                c.cos_no, c.cos_name, c.cos_brand, c.cos_type, c.cos_function, uc.source 
+            c.cos_no, c.cos_name, c.cos_brand, c.cos_type, c.cos_function, uc.source 
             FROM user_cosmetics uc
             JOIN cosmetics c ON uc.cos_no = c.cos_no
             WHERE uc.user_no = ? AND uc.source = '추천'
@@ -122,7 +122,7 @@ router.get('/user-cosmetics', requireLogin, async (req, res, next) => {
 
 router.post('/user-cosmetics', requireLogin, async (req, res, next) => {
     try {
-        const { cos_no, expired_at } = req.body;
+        const { cos_no, expired_at, source } = req.body;  // source 추가
         const user_no = req.user.user_no;
 
         if (!cos_no) throw new ValidationError("화장품을 선택해주세요.");

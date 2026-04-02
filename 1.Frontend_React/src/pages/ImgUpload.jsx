@@ -4,11 +4,22 @@
  - 갤러리 선택 / 카메라 촬영 분리
 */
 
+/*
+ * 연결 흐름 정리 : 버튼 클릭 → handleAnalyze
+    1) localStorage에서 JWT 토큰 추출
+    2) FormData에 skin_img 첨부 후 POST /api/skin/analyze 호출
+    3) setIsLoading(true) → <Loading> 오버레이 표시
+    4) API 응답 완료 시 결과를 analysisResultRef에 저장 → tryFinish() 호출
+    5) Loading 애니메이션 완료 시 handleLoadingDone → tryFinish() 호출
+    6) 둘 다 완료된 시점에 성공이면 /report로 state.analysisData 전달, 실패면 alert
+*/
+
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { D } from "../styles/design";
 import Header from "../components/Header";
 import CTAButton from "../components/CTAButton";
+import Loading from "../components/Loading";
 
 /* 허용 확장자 — skinRouter.js와 동일 */
 const ALLOWED_TYPES = ["image/jpeg", "image/png"];
@@ -26,6 +37,26 @@ export default function ImgUpload() {
 
     const stored = localStorage.getItem("user");
     const nick = stored ? JSON.parse(stored).nick : "";
+
+    /* API 응답 + 애니메이션 완료를 모두 기다린 후 이동 */
+    const analysisResultRef = useRef(null);
+    const loadingDoneRef = useRef(false);
+
+    const tryFinish = () => {
+        if (!analysisResultRef.current || !loadingDoneRef.current) return;
+        const result = analysisResultRef.current;
+        if (result.ok) {
+            navigate("/report", { state: { analysisData: result.data } });
+        } else {
+            setIsLoading(false);
+            alert(result.message);
+        }
+    };
+
+    const handleLoadingDone = () => {
+        loadingDoneRef.current = true;
+        tryFinish();
+    };
 
     /* 미리보기 URL 생성/정리 */
     useEffect(() => {
@@ -101,11 +132,35 @@ export default function ImgUpload() {
         }, "image/jpeg");
     };
 
-    /* 분석 시작 — Step 3에서 API 연동 예정 */
+    /* 분석 시작 — POST /api/skin/analyze */
     const handleAnalyze = async () => {
         if (!selectedFile) return;
-        // TODO: API 호출 + 로딩 오버레이
-        console.log("분석 시작:", selectedFile.name);
+
+        analysisResultRef.current = null;
+        loadingDoneRef.current = false;
+        setIsLoading(true);
+
+        try {
+            const formData = new FormData();
+            formData.append("skin_img", selectedFile);
+
+            const res = await fetch("/api/skin/analyze", {
+                method: "POST",
+                credentials: "include",
+                body: formData,
+            });
+            const result = await res.json();
+
+            if (result.status === "success") {
+                analysisResultRef.current = { ok: true, data: result.data };
+            } else {
+                analysisResultRef.current = { ok: false, message: result.message || "분석 중 오류가 발생했습니다." };
+            }
+        } catch {
+            analysisResultRef.current = { ok: false, message: "서버 연결에 실패했습니다." };
+        }
+
+        tryFinish();
     };
 
     return (
@@ -115,6 +170,9 @@ export default function ImgUpload() {
             minHeight: "100%",
             fontFamily: "inherit",
         }}>
+
+            {/* 로딩 오버레이 — 분석 중일 때 전체 화면 덮음 */}
+            {isLoading && <Loading onDone={handleLoadingDone} />}
 
             {/* 헤더 — 닉네임 표시 + 햄버거 메뉴 */}
             <Header nick={nick} />

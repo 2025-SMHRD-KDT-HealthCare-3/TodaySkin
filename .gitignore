@@ -19,3 +19,9 @@ node_modules/
 
 # sessions 폴더
 2.Backend_node/sessions/
+
+# 실시간으로 처리된 이미지가 저장되는 uploads 폴더 내부 파일은 무시하되
+uploads/*
+
+# .gitkeep 파일만은 예외로 두어 폴더 구조를 유지함
+!uploads/.gitkeep

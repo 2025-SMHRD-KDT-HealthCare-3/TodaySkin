@@ -7,6 +7,7 @@ from services.chatbot_message import get_chat_response
 from services.cosmetics_recommend import recommend_cosmetics
 from services.report_comment import generate_daily_comment
 from services.skin_analyze import analyze_skin_from_path
+
 load_dotenv()
 
 app = FastAPI()
