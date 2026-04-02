@@ -41,8 +41,6 @@ router.post('/join', async (req, res, next) => {
     로그인 (쿠키 방식)
     POST /api/users/login
 */
-
-
 router.post('/login', async (req, res, next) => {
     try {
         const { id, pwd } = req.body;
@@ -56,12 +54,19 @@ router.post('/login', async (req, res, next) => {
         }
 
         const user = results[0];
+
+        // ✅ [추가] 생년월일 기반 나이 계산 (한국 나이 기준)
+        const birthYear = new Date(user.birthdate).getFullYear();
+        const currentYear = new Date().getFullYear();
+        const age = currentYear - birthYear + 1;
+
         const token = jwt.sign(
             {
                 user_no: user.user_no,
                 nick: user.nick,
                 skin_type: user.skin_type,
-                gender: user.gender  
+                gender: user.gender,
+                age: age  // 
             },
             JWT_SECRET,
             { expiresIn: '7d' }
@@ -70,8 +75,9 @@ router.post('/login', async (req, res, next) => {
         // 쿠키에 저장
         res.cookie('token', token, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            maxAge: 7 * 24 * 60 * 60 * 1000 // 7일
+            secure: false, 
+            sameSite: 'lax', 
+            maxAge: 7 * 24 * 60 * 60 * 1000 
         });
 
         res.json({
@@ -119,8 +125,6 @@ router.get('/my', requireLogin, async (req, res, next) => {
     회원정보 수정
     PUT /api/users/my
 */
-
-
 router.put('/my', requireLogin, async (req, res, next) => {
     try {
         const { pwd, nick, skin_type } = req.body;
@@ -153,13 +157,14 @@ router.put('/my', requireLogin, async (req, res, next) => {
             throw err;
         }
 
-        // 닉네임이나 피부타입 변경 시 토큰 재발급
+        // 정보 수정 시에도 토큰에 기존 나이 유지
         const newToken = jwt.sign(
             {
                 user_no: req.user.user_no,
                 nick: nick ? nick.trim() : req.user.nick,
                 skin_type: skin_type || req.user.skin_type,
-                gender: req.user.gender
+                gender: req.user.gender,
+                age: req.user.age 
             },
             JWT_SECRET,
             { expiresIn: '7d' }

@@ -6,8 +6,8 @@ const usersRouter = require('./usersRouter');
 const skinRouter = require('./skinRouter');
 const cosmeticsRouter = require('./cosmeticsRouter');
 const routineRouter = require('./routineRouter');
-// const challengeRouter = require('./challengeRouter');
-// const reportRouter = require('./reportRouter');
+const challengeRouter = require('./challengeRouter');
+const reportRouter = require('./reportRouter');
 const chatbotRouter = require('./chatbotRouter');
 
 // 미들웨어
@@ -20,8 +20,8 @@ router.use('/users', usersRouter);
 router.use('/skin', skinRouter);
 router.use('/cosmetics', cosmeticsRouter);
 router.use('/routine', routineRouter);
-// router.use('/challenge', challengeRouter);
-// router.use('/reports', reportRouter);
+router.use('/challenge', challengeRouter);
+router.use('/reports', reportRouter);
 router.use('/chatbot', chatbotRouter);
 
 
