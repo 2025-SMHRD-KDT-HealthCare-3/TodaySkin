@@ -6,10 +6,15 @@ const axios = require('axios');
 const fs = require('fs').promises;
 const { requireLogin } = require('../middleware/auth');
 const { ValidationError } = require('../middleware/errorHandler'); 
+const multer = require('multer');
 
 const FASTAPI_URL = process.env.FASTAPI_URL || 'http://localhost:8000';
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
+const upload = multer({ 
+    dest: 'uploads/', // 프로젝트 루트에 'uploads' 폴더가 있어야 합니다.
+    limits: { fileSize: 5 * 1024 * 1024 } // 5MB 제한 (선택사항)
+});
 
 // 파일 삭제 헬퍼
 
