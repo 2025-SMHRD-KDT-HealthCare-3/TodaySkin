@@ -104,7 +104,18 @@ router.get('/', requireLogin, async (req, res, next) => {
         if (chalResults.length === 0) throw new ValidationError("진행 중인 챌린지가 없습니다.", 404);
 
         const { chal_no, chal_type, day_count } = chalResults[0];
-        const needNewRoutine = day_count === 1 || day_count === 8;
+        
+        // 1. 오늘 이미 생성된 루틴이 있는지 확인
+        const [existingCheck] = await conn.query(`
+            SELECT a.action_no 
+            FROM actions a
+            JOIN challenge_details cd ON a.detail_no = cd.detail_no
+            WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.created_at) = CURDATE()
+            LIMIT 1
+        `, [chal_no, user_no]);
+        
+        // 1일차 / 8일차 이면서 오늘 생성된 기록이 없을 때만 루틴 생성
+        const needNewRoutine = (day_count === 1 || day_count === 8) && existingCheck.length === 0;
 
         if (needNewRoutine) {
             // 오늘 이미 생성된 루틴 데이터가 있으면 먼저 삭제 (멱등성 보장)
@@ -139,23 +150,19 @@ router.get('/', requireLogin, async (req, res, next) => {
 
             if (day_count === 8) {
                 const [prevAnalyses] = await conn.query(
-                    "SELECT acne_score, pore_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no WHERE u.user_no = ? ORDER BY a.created_at DESC LIMIT 2",
+                    "SELECT total_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no WHERE u.user_no = ? ORDER BY a.created_at DESC LIMIT 2",
                     [user_no]
                 );
+                
                 if (prevAnalyses.length === 2) {
-                    const [prevAnalyses] = await conn.query(
-                        "SELECT total_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no WHERE u.user_no = ? ORDER BY a.created_at DESC LIMIT 2",
-                        [user_no]
-                    );
-                    if (prevAnalyses.length === 2) {
-                        total_score_change = Number((prevAnalyses[0].total_score - prevAnalyses[1].total_score).toFixed(1));
-                    }
-                    total_score_change = Number((currTotal - prevTotal).toFixed(1));
+                    // 최신 점수와 그 이전 점수의 차이 계산
+                    total_score_change = Number((prevAnalyses[0].total_score - prevAnalyses[1].total_score).toFixed(1));
                 }
+                
                 const rates = await getCumulativeRate(user_no, chal_no);
                 compliance_rate = rates.cumulative_rate;
             }
-
+                
             // FastAPI 호출
             const pythonRes = await axios.post(`${FASTAPI_URL}/api/routine/generate`, {
                 skin_type: req.user.skin_type || "지성",

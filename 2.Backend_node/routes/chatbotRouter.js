@@ -60,6 +60,7 @@ router.post('/message', requireLogin, async (req, res, next) => {
         
         // 달성률 조회
         const compliance_rate = await getComplianceRate(user_no);
+
         
         // 기본값 설정
         const info = userResults[0] || { 
