@@ -1,6 +1,7 @@
 export const D = {
   mainBg: "#FAF9F7",
-  bgMain: "#FDFCFA",
+  // bgMain: "#FDFCFA",
+  bgMain: "#FFFFFF",
   bgSub: "#F4E5D9",
   nav: "#9eae9c",
   footer: "#556f63",

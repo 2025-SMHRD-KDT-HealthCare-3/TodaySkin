@@ -93,7 +93,6 @@ router.get('/user-cosmetics', requireLogin, async (req, res, next) => {
     try {
         const sql = `
             SELECT uc.ucos_no, uc.cos_no, c.cos_name, c.cos_brand, c.cos_type,
-                   c.cos_ingredient,
                    uc.expired_at, uc.source 
             FROM user_cosmetics uc
             JOIN cosmetics c ON uc.cos_no = c.cos_no
