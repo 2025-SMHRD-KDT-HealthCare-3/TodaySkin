@@ -66,6 +66,33 @@ router.get('/daily', requireLogin, async (req, res, next) => {
         if (has_today_analysis) {
             const analysis = todayResults[0];
 
+
+            const [existingReport] = await conn.query(`
+                SELECT line_comment 
+                FROM daily_reports 
+                WHERE user_no = ? AND chal_no = ? AND DATE(created_at) = ?
+                LIMIT 1
+            `, [user_no, chal_no, today]);
+
+            if (existingReport.length > 0) {
+                // 이미 코멘트가 있으면 파이썬 안 부르고 바로 리턴 
+                return res.json({
+                    status: "success",
+                    data: {
+                        has_today_analysis: true,
+                        day_count,
+                        chal_name,
+                        total_score: analysis.total_score,
+                        acne_score: analysis.acne_score,
+                        pore_score: analysis.pore_score,
+                        line_comment: existingReport[0].line_comment, // DB에서 꺼낸 코멘트
+                        daily_rate,
+                        cumulative_rate,
+                        report_date: today
+                    }
+                });
+            }
+
             // 이전 분석 데이터 조회 
             const [prevResults] = await conn.query(`
                 SELECT total_score

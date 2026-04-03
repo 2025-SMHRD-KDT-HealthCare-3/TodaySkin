@@ -50,6 +50,9 @@ router.post('/', requireLogin, async (req, res, next) => {
                 "UPDATE challenges SET chal_status = '중단' WHERE chal_no = ?",
                 [prevChal.chal_no]
             );
+
+            // 새로 시작할 때 기존 추천 화장품 삭제
+            await conn.query("DELETE FROM user_cosmetics WHERE user_no = ? AND source = '추천'", [user_no]);
         }
 
         // [신규 챌린지 계산]
@@ -120,6 +123,9 @@ router.get('/', requireLogin, async (req, res, next) => {
                 [challenge.chal_no]
             );
 
+            // 챌린지 완료 시 추천 화장품 삭제
+            await conn.query("DELETE FROM user_cosmetics WHERE user_no = ? AND source = '추천'", [user_no]);
+
             return res.json({
                 status: "success",
                 data: { ...challenge, chal_status: '완료' },
@@ -147,6 +153,9 @@ router.patch('/stop', requireLogin, async (req, res, next) => {
         );
 
         if (result.affectedRows === 0) throw new ValidationError("진행 중인 챌린지가 없습니다.", 404);
+
+        // 챌린지 수동 종료시 추천 화장품 삭제
+        await conn.query("DELETE FROM user_cosmetics WHERE user_no = ? AND source = '추천'", [user_no]);
 
         return res.json({ status: "success", data: { message: "챌린지를 중단하였습니다." } });
     } catch (error) {
