@@ -63,7 +63,8 @@ export default function Main() {
                     const skinJson = await skinRes.value.json();
                     if (skinJson.status === "success") {
                         const analysisDate = skinJson.data.created_at?.slice(0, 10);
-                        const today = new Date().toISOString().slice(0, 10);
+                        const now = new Date();
+                        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
                         setSkinResult(skinJson.data);
                         setPageCase(analysisDate === today ? 3 : 2);
