@@ -13,6 +13,19 @@ const { ValidationError } = require('../middleware/errorHandler');
 
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
+// 달성률 조회 함수 — daily_reports 테이블에서 가장 최근 achievement_rate 가져옴
+// 진행중인 챌린지 데이터 없으면 기본값 0 반환
+async function getComplianceRate(user_no) {
+    const sql = `
+        SELECT achievement_rate
+        FROM daily_reports
+        WHERE user_no = ?
+        ORDER BY created_at DESC LIMIT 1
+    `;
+    const [results] = await conn.query(sql, [user_no]);
+    return results[0]?.achievement_rate || 0;
+}
+
 
 /*
     챗봇 메시지 전송 (POST)
@@ -45,6 +58,9 @@ router.post('/message', requireLogin, async (req, res, next) => {
         
         const [userResults] = await conn.query(userDataSql, [user_no, user_no]);
         
+        // 달성률 조회
+        const compliance_rate = await getComplianceRate(user_no);
+        
         // 기본값 설정
         const info = userResults[0] || { 
             acne_score: 0, 
@@ -63,6 +79,7 @@ router.post('/message', requireLogin, async (req, res, next) => {
                 acne_score: Number(info.acne_score) || 0, 
                 pore_score: Number(info.pore_score) || 0,
                 user_cosmetics: String(info.user_cosmetics || "정보 없음"),
+                compliance_rate: Number(compliance_rate),
                 // "기록 없음"은 FastAPI(Pydantic)에서 날짜 파싱 에러를 유발하므로 빈 문자열""로 처리
                 last_analysis_date: info.last_analysis_date === "기록 없음" ? "" : info.last_analysis_date,
             },
