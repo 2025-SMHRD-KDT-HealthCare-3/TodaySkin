@@ -26,7 +26,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
 
         // 진행 중인 챌린지 조회
         const [chalResults] = await conn.query(
-            "SELECT chal_no, DATEDIFF(NOW(), start_date) + 1 AS day_count FROM challenges WHERE user_no = ? AND chal_status = '진행중' ORDER BY created_at DESC LIMIT 1",
+            "SELECT chal_no, chal_name, DATEDIFF(NOW(), start_date) + 1 AS day_count FROM challenges WHERE user_no = ? AND chal_status = '진행중' ORDER BY created_at DESC LIMIT 1",
             [user_no]
         );
 
@@ -34,7 +34,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
             throw new ValidationError("진행 중인 챌린지가 없습니다.", 404);
         }
 
-        const { chal_no, day_count } = chalResults[0];
+        const { chal_no, chal_name, day_count } = chalResults[0];
 
         // 오늘 분석 데이터 확인
         const [todayResults] = await conn.query(`
@@ -107,6 +107,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
                         data: {
                             has_today_analysis: true,
                             day_count,
+                            chal_name,
                             total_score: analysis.total_score,
                             acne_score: analysis.acne_score,
                             pore_score: analysis.pore_score,

@@ -21,13 +21,17 @@ const { ValidationError } = require('../middleware/errorHandler');
 */
 router.post('/', requireLogin, async (req, res, next) => {
     try {
-        const { chal_type } = req.body;
+        const { chal_type , chal_name} = req.body;
         const user_no = req.user.user_no;
 
         if (!chal_type || ![7, 14].includes(Number(chal_type))) {
             throw new ValidationError("챌린지 기간은 7일 또는 14일만 선택 가능합니다.");
         }
-
+  
+        if (!chal_name || !chal_name.trim()) {
+        throw new ValidationError("챌린지 목표를 입력해주세요.");
+        }
+        
         // 진행 중인 챌린지 조회
         const [activeChals] = await conn.query(
             "SELECT chal_no FROM challenges WHERE user_no = ? AND chal_status = '진행중' LIMIT 1",
@@ -50,8 +54,7 @@ router.post('/', requireLogin, async (req, res, next) => {
         endDate.setDate(endDate.getDate() + Number(chal_type) - 1);
 
         const formatDate = (d) => d.toISOString().slice(0, 10);
-        const chal_name = `${chal_type}일 챌린지`;
-
+    
         const [result] = await conn.query(
             "INSERT INTO challenges (user_no, chal_name, start_date, end_date, chal_type, chal_status, created_at) VALUES (?, ?, ?, ?, ?, '진행중', NOW())",
             [user_no, chal_name, formatDate(startDate), formatDate(endDate), chal_type]
@@ -62,6 +65,7 @@ router.post('/', requireLogin, async (req, res, next) => {
             data: {
                 new_challenge: {
                     chal_no: result.insertId,
+                    chal_name: chal_name.trim(),
                     chal_type: Number(chal_type),
                     start_date: formatDate(startDate),
                     end_date: formatDate(endDate),
