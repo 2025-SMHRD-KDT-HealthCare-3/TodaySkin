@@ -46,7 +46,7 @@ export default function ImgUpload() {
         if (!analysisResultRef.current || !loadingDoneRef.current) return;
         const result = analysisResultRef.current;
         if (result.ok) {
-            navigate("/report", { state: { analysisData: result.data } });
+            navigate("/", { state: { analysisData: result.data } });
         } else {
             setIsLoading(false);
             alert(result.message);

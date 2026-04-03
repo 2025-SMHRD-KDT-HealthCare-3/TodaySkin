@@ -98,6 +98,7 @@ router.get('/user-cosmetics', requireLogin, async (req, res, next) => {
             FROM user_cosmetics uc
             JOIN cosmetics c ON uc.cos_no = c.cos_no
             WHERE uc.user_no = ?
+            AND c.cos_name != '물세안'
             ORDER BY uc.created_at DESC
         `;
         const [results] = await conn.query(sql, [req.user.user_no]);
