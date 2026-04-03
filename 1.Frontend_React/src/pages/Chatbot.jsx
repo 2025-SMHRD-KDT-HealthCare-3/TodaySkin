@@ -102,6 +102,7 @@ export default function Chatbot() {
     /* 엔터키 전송 */
     const handleKeyDown = (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
+            if (e.nativeEvent.isComposing) return;  // ✅ 조합 중이면 완전 차단
             e.preventDefault();
             handleSend(input);
         }
@@ -276,6 +277,7 @@ export default function Chatbot() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
+                    onCompositionEnd={(e) => setInput(e.target.value)}  
                     placeholder="피부 고민을 입력하세요"
                     style={{
                         flex: 1,
