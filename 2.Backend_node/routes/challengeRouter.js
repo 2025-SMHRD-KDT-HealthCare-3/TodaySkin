@@ -21,11 +21,19 @@ const { ValidationError } = require('../middleware/errorHandler');
 */
 router.post('/', requireLogin, async (req, res, next) => {
     try {
-        const { chal_type } = req.body;
+        const { chal_type, chal_name } = req.body;
         const user_no = req.user.user_no;
 
         if (!chal_type || ![7, 14].includes(Number(chal_type))) {
             throw new ValidationError("챌린지 기간은 7일 또는 14일만 선택 가능합니다.");
+        }
+
+        if (!chal_name || !chal_name.trim()) {
+            throw new ValidationError("챌린지 목표를 입력해주세요.");
+        }
+
+        if (chal_name.trim().length > 50) {
+            throw new ValidationError("챌린지 목표는 50자 이내로 입력해주세요.");
         }
 
         // 진행 중인 챌린지 조회
@@ -42,6 +50,9 @@ router.post('/', requireLogin, async (req, res, next) => {
                 "UPDATE challenges SET chal_status = '중단' WHERE chal_no = ?",
                 [prevChal.chal_no]
             );
+
+            // 새로 시작할 때 기존 추천 화장품 삭제
+            await conn.query("DELETE FROM user_cosmetics WHERE user_no = ? AND source = '추천'", [user_no]);
         }
 
         // [신규 챌린지 계산]
@@ -50,7 +61,6 @@ router.post('/', requireLogin, async (req, res, next) => {
         endDate.setDate(endDate.getDate() + Number(chal_type) - 1);
 
         const formatDate = (d) => d.toISOString().slice(0, 10);
-        const chal_name = `${chal_type}일 챌린지`;
 
         const [result] = await conn.query(
             "INSERT INTO challenges (user_no, chal_name, start_date, end_date, chal_type, chal_status, created_at) VALUES (?, ?, ?, ?, ?, '진행중', NOW())",
@@ -62,13 +72,14 @@ router.post('/', requireLogin, async (req, res, next) => {
             data: {
                 new_challenge: {
                     chal_no: result.insertId,
+                    chal_name: chal_name.trim(),
                     chal_type: Number(chal_type),
                     start_date: formatDate(startDate),
                     end_date: formatDate(endDate),
                     chal_status: "진행중"
                 },
-                message: prevChal 
-                    ? "새로운 챌린지가 시작되었습니다! 이전 기록은 자동으로 중단되었습니다." 
+                message: prevChal
+                    ? "새로운 챌린지가 시작되었습니다! 이전 기록은 자동으로 중단되었습니다."
                     : "새로운 챌린지가 시작되었습니다!"
             }
         });
@@ -91,7 +102,7 @@ router.get('/', requireLogin, async (req, res, next) => {
 
         // 진행중인 최신 챌린지 1개 조회
         const [results] = await conn.query(`
-            SELECT chal_no, chal_type, start_date, end_date, chal_status,
+            SELECT chal_no, chal_name, chal_type, start_date, end_date, chal_status,
                 DATEDIFF(?, start_date) + 1 AS day_count
             FROM challenges
             WHERE user_no = ? AND chal_status = '진행중'
@@ -111,7 +122,10 @@ router.get('/', requireLogin, async (req, res, next) => {
                 "UPDATE challenges SET chal_status = '완료' WHERE chal_no = ?",
                 [challenge.chal_no]
             );
-            
+
+            // 챌린지 완료 시 추천 화장품 삭제
+            await conn.query("DELETE FROM user_cosmetics WHERE user_no = ? AND source = '추천'", [user_no]);
+
             return res.json({
                 status: "success",
                 data: { ...challenge, chal_status: '완료' },
@@ -140,6 +154,9 @@ router.patch('/stop', requireLogin, async (req, res, next) => {
 
         if (result.affectedRows === 0) throw new ValidationError("진행 중인 챌린지가 없습니다.", 404);
 
+        // 챌린지 수동 종료시 추천 화장품 삭제
+        await conn.query("DELETE FROM user_cosmetics WHERE user_no = ? AND source = '추천'", [user_no]);
+
         return res.json({ status: "success", data: { message: "챌린지를 중단하였습니다." } });
     } catch (error) {
         next(error);
@@ -154,7 +171,7 @@ router.patch('/stop', requireLogin, async (req, res, next) => {
 router.get('/history', requireLogin, async (req, res, next) => {
     try {
         const [results] = await conn.query(`
-            SELECT chal_no, chal_type, start_date, end_date, chal_status
+            SELECT chal_no, chal_name, chal_type, start_date, end_date, chal_status
             FROM challenges
             WHERE user_no = ? AND chal_status IN ('완료', '중단')
             ORDER BY created_at DESC

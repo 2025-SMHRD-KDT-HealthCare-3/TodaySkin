@@ -92,7 +92,8 @@ router.get('/recommend', requireLogin, async (req, res, next) => {
 router.get('/user-cosmetics', requireLogin, async (req, res, next) => {
     try {
         const sql = `
-            SELECT uc.ucos_no, uc.cos_no, c.cos_name, c.cos_brand, c.cos_type, 
+            SELECT uc.ucos_no, uc.cos_no, c.cos_name, c.cos_brand, c.cos_type,
+                   c.cos_ingredients,
                    uc.expired_at, uc.source 
             FROM user_cosmetics uc
             JOIN cosmetics c ON uc.cos_no = c.cos_no
@@ -192,13 +193,13 @@ router.put('/user-cosmetics/:ucos_no', requireLogin, async (req, res, next) => {
         }
 
         await conn.query(
-            "UPDATE user_cosmetics SET expired_at = ? WHERE ucos_no = ?",
+            "UPDATE user_cosmetics SET expired_at = ?, source = '보유' WHERE ucos_no = ?",
             [expired_at || null, ucos_no]
         );
 
         res.json({
             status: "success",
-            data: { message: "유통기한이 수정되었습니다." }
+            data: { message: "유통기한이 수정되어 화장품이 '보유' 상태로 전환되었습니다." } 
         });
     } catch (error) {
         next(error);

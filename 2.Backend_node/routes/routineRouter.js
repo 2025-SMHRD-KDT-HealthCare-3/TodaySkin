@@ -15,9 +15,7 @@ const { requireLogin } = require('../middleware/auth');
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
 
-
 // 1. 루틴 저장 헬퍼
-
 async function saveRoutineToDB(user_no, chal_no, routineData) {
     const timeSlots = ['morning', 'evening', 'special'];
 
@@ -25,7 +23,6 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
         const items = routineData[time] || [];
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
-
 
             let cos_no = item.cos_no || null;
             if (!cos_no && item.cos_name) {
@@ -50,7 +47,6 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
                     [user_no, cos_no]
                 );
             }
-
 
             const [routineRes] = await conn.query(
                 "INSERT INTO routines (user_no, cos_no, routine_time, routine_order) VALUES (?, ?, ?, ?)",
@@ -108,10 +104,20 @@ router.get('/', requireLogin, async (req, res, next) => {
         if (chalResults.length === 0) throw new ValidationError("진행 중인 챌린지가 없습니다.", 404);
 
         const { chal_no, chal_type, day_count } = chalResults[0];
-        const needNewRoutine = day_count === 1 || day_count === 8;
+        
+        // 1. 오늘 이미 생성된 루틴이 있는지 확인
+        const [existingCheck] = await conn.query(`
+            SELECT a.action_no 
+            FROM actions a
+            JOIN challenge_details cd ON a.detail_no = cd.detail_no
+            WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.created_at) = CURDATE()
+            LIMIT 1
+        `, [chal_no, user_no]);
+        
+        // 1일차 / 8일차 이면서 오늘 생성된 기록이 없을 때만 루틴 생성
+        const needNewRoutine = (day_count === 1 || day_count === 8) && existingCheck.length === 0;
 
         if (needNewRoutine) {
-
             // 오늘 이미 생성된 루틴 데이터가 있으면 먼저 삭제 (멱등성 보장)
             await conn.query(`
                 DELETE a FROM actions a
@@ -125,74 +131,58 @@ router.get('/', requireLogin, async (req, res, next) => {
             `, [chal_no]);
 
             // AI 생성을 위한 데이터 준비
-
             const [analysis] = await conn.query(
                 "SELECT acne_score, pore_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no WHERE u.user_no = ? ORDER BY a.created_at DESC LIMIT 1",
                 [user_no]
             );
 
-            // [데이터 수집] 유저 보유 화장품
             const [cosmetics] = await conn.query(
                 "SELECT c.cos_name, c.cos_type FROM user_cosmetics uc JOIN cosmetics c ON uc.cos_no = c.cos_no WHERE uc.user_no = ?",
                 [user_no]
             );
             const userCosmeticsText = cosmetics.map(c => `${c.cos_name}(${c.cos_type})`).join(", ") || "없음";
 
-
             const [candidates] = await conn.query("SELECT cos_name, cos_brand FROM cosmetics");
             const candidatesText = candidates.map(c => `- ${c.cos_name}(${c.cos_brand})`).join("\n");
-
 
             let total_score_change = 0;
             let compliance_rate = 0;
 
             if (day_count === 8) {
                 const [prevAnalyses] = await conn.query(
-                    "SELECT acne_score, pore_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no WHERE u.user_no = ? ORDER BY a.created_at DESC LIMIT 2",
+                    "SELECT total_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no WHERE u.user_no = ? ORDER BY a.created_at DESC LIMIT 2",
                     [user_no]
                 );
+                
                 if (prevAnalyses.length === 2) {
-                    const [prevAnalyses] = await conn.query(
-                        "SELECT total_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no WHERE u.user_no = ? ORDER BY a.created_at DESC LIMIT 2",
-                        [user_no]
-                    );
-                    if (prevAnalyses.length === 2) {
-                        total_score_change = Number((prevAnalyses[0].total_score - prevAnalyses[1].total_score).toFixed(1));
-                    }
-
-                    total_score_change = Number((currTotal - prevTotal).toFixed(1));
+                    // 최신 점수와 그 이전 점수의 차이 계산
+                    total_score_change = Number((prevAnalyses[0].total_score - prevAnalyses[1].total_score).toFixed(1));
                 }
+                
                 const rates = await getCumulativeRate(user_no, chal_no);
                 compliance_rate = rates.cumulative_rate;
             }
-
-
+                
             // FastAPI 호출
-
             const pythonRes = await axios.post(`${FASTAPI_URL}/api/routine/generate`, {
                 skin_type: req.user.skin_type || "지성",
                 acne_score: Number(analysis[0]?.acne_score || 0),
                 pore_score: Number(analysis[0]?.pore_score || 0),
                 chal_type: Number(chal_type),
                 week: day_count <= 7 ? 1 : 2,
-
                 age: Number(req.user.age || 25), 
                 gender: req.user.gender || "M",
-
                 user_cosmetics: userCosmeticsText,
                 cosmetic_candidates: candidatesText,
                 total_score_change: total_score_change,
                 compliance_rate: Number(compliance_rate)
-
             }, { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 60000 });
-
 
             const routine = pythonRes.data.data.routine;
             if (!routine) throw new ValidationError("AI 루틴 생성에 실패했습니다.", 500);
 
             // DB 저장
             await saveRoutineToDB(user_no, chal_no, routine);
-
 
             // 조회 및 응답 구성 (source, action_no 포함)
             const routineSql = `
@@ -228,13 +218,10 @@ router.get('/', requireLogin, async (req, res, next) => {
             res.json({
                 status: "success",
                 data: { day_count, cumulative_achievement_rate: finalRates.cumulative_rate, routine: finalGrouped }
-
             });
 
         } else {
-
             // 이미 생성된 기존 루틴 조회
-
             const routineSql = `
                 SELECT a.action_no, c.cos_name AS name, r.routine_time, r.routine_order,
                        CASE WHEN a.action_yn = 'Y' THEN true ELSE false END AS completed,

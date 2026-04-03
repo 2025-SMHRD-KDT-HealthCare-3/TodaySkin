@@ -138,7 +138,7 @@ export default function ProfileView() {
                         borderRadius: "50%",
                         overflow: "hidden",
                         margin: "0 auto 16px",
-                        border: `3px solid ${D.accent}`,
+                        border: `3px solid ${D.cta}`,
                     }}
                 >
                     <img
@@ -265,7 +265,7 @@ export default function ProfileView() {
                                 width: 44,
                                 height: 24,
                                 borderRadius: 12,
-                                background: alarmOn ? D.positive : D.border,
+                                background: alarmOn ? D.cta : D.border,
                                 cursor: "pointer",
                                 position: "relative",
                                 transition: "background 0.2s",

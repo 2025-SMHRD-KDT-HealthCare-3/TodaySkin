@@ -82,8 +82,14 @@ export default function Login({ onLoginSuccess }) {
                 fontFamily: "inherit",
             }}
         >
-            {/* 상단 콘텐츠 */}
-            <div style={{ padding: "60px 40px 40px" }}>
+            {/* 상단 콘텐츠 : flex: 1 + 세로 중앙 정렬 */}
+            <div style={{
+                padding: "60px 40px 40px",
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+            }}>
 
                 {/* 나뭇잎 아이콘 + 인사말 */}
                 <div style={{ textAlign: "center", marginBottom: 28 }}>
@@ -165,6 +171,7 @@ export default function Login({ onLoginSuccess }) {
                     style={{
                         textAlign: "center",
                         marginTop: 20,
+                        marginBottom: 16,
                         fontSize: 13,
                         color: D.textLight,
                     }}
@@ -182,6 +189,7 @@ export default function Login({ onLoginSuccess }) {
             {/* 하단 이미지 */}
             <div
                 style={{
+                    marginTop: "auto",
                     height: 160,
                     borderRadius: "0 0 24px 24px",
                     overflow: "hidden",
