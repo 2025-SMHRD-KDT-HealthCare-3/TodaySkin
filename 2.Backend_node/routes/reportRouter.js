@@ -107,7 +107,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
             //  FastAPI 한줄 코멘트 요청 
             try {
                 const commentRes = await axios.post(
-                    `${FASTAPI_URL}/api/report/comment`,
+                    `${FASTAPI_URL}/api/daily/comment`,
                     {
                         skin_type: req.user.skin_type || "정보 없음",
                         total_score: Number(analysis.total_score),
@@ -121,7 +121,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
 
                     // 코멘트 DB 저장
                     await conn.query(`
-                        INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, overall_score, achievement_rate, created_at)
+                        INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, overall_review, achievement_rate, created_at)
                         SELECT ?, ?, a.anls_no, ?, ?, ?, NOW()
                         FROM img_analyses a
                         JOIN uploads u ON a.upload_no = u.upload_no
