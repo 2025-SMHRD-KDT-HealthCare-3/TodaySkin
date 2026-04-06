@@ -312,7 +312,7 @@ CREATE TABLE daily_reports
     chal_no           INT            NOT NULL    COMMENT '챌린지 고유번호', 
     anls_no           INT            NOT NULL    COMMENT '이미지분석 고유번호', 
     line_comment      VARCHAR(255)   NOT NULL    COMMENT '한줄 코멘트', 
-    overall_review    INT            NOT NULL    DEFAULT 0 	   COMMENT '종합 평가 점수', 
+    overall_score    INT            NOT NULL    DEFAULT 0 	   COMMENT '종합 평가 점수', 
     achievement_rate  INT            NOT NULL    DEFAULT 0 	   COMMENT '달성 률', 
     created_at        DATETIME       NOT NULL    DEFAULT NOW() COMMENT '등록 일자', 
 	PRIMARY KEY (report_no)

@@ -70,7 +70,7 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
 
             const [routineRes] = await conn.query(
                 "INSERT INTO routines (user_no, cos_no, routine_time, routine_order, description, recommend_reason) VALUES (?, ?, ?, ?, ?, ?)",
-                [user_no, cos_no, time, order, item.description, item.recommend_reason] // order로 변경!
+                [user_no, cos_no, time, order, item.description || null, item.recommend_reason] // order로 변경!
             );
 
             const routine_no = routineRes.insertId;
@@ -171,8 +171,12 @@ router.get('/', requireLogin, async (req, res, next) => {
                 [user_no]
             );
 
+            // source = '보유' 인 것만 가져오기
             const [cosmetics] = await conn.query(
-                "SELECT c.cos_name, c.cos_type FROM user_cosmetics uc JOIN cosmetics c ON uc.cos_no = c.cos_no WHERE uc.user_no = ?",
+                `SELECT c.cos_name, c.cos_type, c.cos_ingredient 
+                    FROM user_cosmetics uc 
+                    JOIN cosmetics c ON uc.cos_no = c.cos_no 
+                    WHERE uc.user_no = ? AND uc.source = '보유'`,  // ✅ '보유'만
                 [user_no]
             );
             const userCosmeticsText = cosmetics.map(c => `${c.cos_name}(${c.cos_type})`).join(", ") || "없음";
