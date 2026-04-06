@@ -128,13 +128,13 @@ router.get('/daily', requireLogin, async (req, res, next) => {
 
                     // 코멘트 DB 저장
                     await conn.query(`
-                        INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, overall_review, achievement_rate, created_at)
+                        INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, overall_score, created_at)
                         SELECT ?, ?, a.anls_no, ?, ?, ?, NOW()
                         FROM img_analyses a
                         JOIN uploads u ON a.upload_no = u.upload_no
                         WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
                         ORDER BY a.created_at DESC LIMIT 1
-                    `, [user_no, chal_no, line_comment, analysis.total_score, cumulative_rate, user_no, today]);
+                    `, [user_no, chal_no, line_comment, analysis.total_score, user_no, today]);
                 }
             } catch (aiError) {
                 console.error('[AI COMMENT ERROR]', aiError.message);
