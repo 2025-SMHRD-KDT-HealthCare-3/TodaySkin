@@ -1,125 +1,129 @@
 # 3.Ai_FastAPI/utils/score_utils.py
-# 점수 계산하는 파일
-# 여드름: 개수 + confidence => 여드름은 개수 중심, confidence는 보조
-# 모공: 겹침 제거한 전체 탐지 영역 비율(union_area_ratio) 중심 + count는 보조
-# 최종 점수: 여드름 0.7 + 모공 0.3
-# 사용자 체감과 현재 탐지 방식(큰 박스 + 겹침 가능)을 반영한 연속 점수 방식
+# 점수 계산 파일
+#
+# 점수 철학:
+# - 점수가 높을수록 피부 상태가 좋음
+# - 여드름: 개수(count) 중심 + confidence 보조
+# - 모공: union_area_ratio 중심 + count 보조
+# - 총점: 여드름 0.7 + 모공 0.3
+#
+# 개선점:
+# - 기존 선형 감점은 탐지 수가 많아질 때 너무 급격히 0점에 가까워짐
+# - log 스케일을 사용해 감점 증가폭을 완만하게 만듦
 
+import math
 from typing import Any
 
-# =========================
-# 점수 정책
-# - 점수가 높을수록 피부 상태가 좋음
-# - 여드름: count 중심 + confidence 보조
-# - 모공: union_area_ratio 중심 + count 보조
-# - total_score: 여드름 0.7 + 모공 0.3 가중합
-# =========================
+# ==================================
+# 최종 가중치
+# ==================================
+# 여드름 점수를 더 중요하게 반영
+
 ACNE_WEIGHT = 0.7
 PORE_WEIGHT = 0.3
 
 # =========================
 # 여드름 점수 계수
-# - ACNE_COUNT_PENALTY: 여드름 1개당 7점 감점
-# - ACNE_CONF_PENALTY: confidence 보조 감점
-#   → avg_conf 0.8 기준 약 6.4점 추가 감점
+# 기존 선형 감점 문제:
+#   count=15 → 100 - (15 * 7.0) = 0점 (너무 가혹)
+# 개선: log1p 스케일로 완만하게 감점
+#   count=1  → log1p(1)  * 20 ≈  13.9  → score ≈ 86
+#   count=5  → log1p(5)  * 20 ≈  35.8  → score ≈ 64
+#   count=15 → log1p(15) * 20 ≈  55.5  → score ≈ 44
+#   count=30 → log1p(30) * 20 ≈  68.0  → score ≈ 32
+#   count=50 → log1p(50) * 20 ≈  78.4  → score ≈ 22
 # =========================
-ACNE_COUNT_PENALTY = 7.0
+# count는 log1p(count)로 감점
+# avg confidence는 보조 감점
+
+ACNE_COUNT_LOG_SCALE = 20.0
 ACNE_CONF_PENALTY = 8.0
 
 # =========================
 # 모공 점수 계수
-# - 현재 모공 탐지는 큰 박스 + 겹침이 있을 수 있으므로
-#   avg_area_ratio / sum(area_ratios) 대신 union_area_ratio 사용
-# - PORE_COUNT_PENALTY: count는 아주 약하게만 반영
-# - PORE_UNION_AREA_PENALTY:
-#   union_area_ratio 0.03 -> 36점 감점
-#   union_area_ratio 0.05 -> 60점 감점
+# 기존 선형 감점 문제:
+#   union_area_ratio=0.084 → 100 - (0.084 * 1200) = 0점 (흔한 수준에서 0점)
+# 개선: log1p 스케일 적용
+#   ratio=0.01  → log1p(0.01  * 500) * 25 ≈  29.3  → score ≈ 71
+#   ratio=0.05  → log1p(0.05  * 500) * 25 ≈  84.7  → score ≈ 38 (보정 후)
+#   ratio=0.084 → log1p(0.084 * 500) * 25 ≈  97.5  → score ≈ 20 (보정 후)
+#   ratio=0.20  → log1p(0.20  * 500) * 25 ≈ 119.5  → clamp 0
 # =========================
-PORE_COUNT_PENALTY = 0.5
-PORE_UNION_AREA_PENALTY = 1200.0
+# union_area_ratio는 먼저 증폭 후 log1p 적용
+# count는 약하게만 반영
+
+PORE_AREA_LOG_SCALE = 500.0
+PORE_AREA_LOG_WEIGHT = 25.0
+PORE_COUNT_PENALTY = 0.3
 
 
 def _safe_avg(values: list[float]) -> float:
-    """리스트 평균. 비어있으면 0.0 반환."""
+    """
+    평균 계산 헬퍼
+    - 빈 리스트면 0.0 반환
+    """
     if not values:
         return 0.0
     return sum(values) / len(values)
 
 
 def _clamp_score(score: float) -> int:
-    """0~100 범위 정수 점수로 보정."""
+    """
+    점수를 0~100 범위 정수로 보정
+    """
     return max(0, min(100, round(score)))
 
 
 def _calculate_acne_score(count: int, confidences: list[float]) -> int:
     """
     여드름 점수 계산
-    - count가 많을수록 감점
-    - confidence가 높을수록 보조 감점
-    - 점수가 높을수록 피부 상태가 좋음
 
-    점수 분포 예시 (avg_conf=0.8 기준):
-        0개  -> 100점
-        1개  ->  87점
-        3개  ->  73점
-        5개  ->  59점
-        7개  ->  45점
-        10개 ->  24점
-        15개 ->   0점
+    로직:
+    - 여드름 개수가 많을수록 감점
+    - confidence가 높을수록 탐지가 더 확실하므로 보조 감점
+    - log1p(count)를 써서 count 증가에 따른 감점이 너무 가혹하지 않게 조절
     """
     if count <= 0:
         return 100
 
     avg_conf = _safe_avg(confidences)
-    count_penalty = count * ACNE_COUNT_PENALTY
-    conf_penalty = avg_conf * ACNE_CONF_PENALTY
-    raw_score = 100 - count_penalty - conf_penalty
 
-    return _clamp_score(raw_score)
+    # count 감점: log 스케일
+    count_penalty = math.log1p(count) * ACNE_COUNT_LOG_SCALE
+
+    # confidence 감점: 보조
+    conf_penalty = avg_conf * ACNE_CONF_PENALTY
+
+    return _clamp_score(100 - count_penalty - conf_penalty)
 
 
 def _calculate_pore_score(count: int, union_area_ratio: float) -> int:
     """
     모공 점수 계산
-    - union_area_ratio가 클수록 크게 감점 (중심)
-    - count는 아주 약하게 보조 감점
-    - 점수가 높을수록 피부 상태가 좋음
 
-    현재 모델은 큰 박스/겹침 박스가 나올 수 있어
-    '개별 모공 수'보다 '실제로 얼마나 넓은 영역이 탐지되었는지'를
-    더 중요하게 반영합니다.
-
-    점수 분포 예시:
-    1) count = 3, union_area_ratio = 0.02
-       -> 100 - (3 * 0.5) - (0.02 * 1200)
-       -> 100 - 1.5 - 24
-       -> 약 74점
-
-    2) count = 5, union_area_ratio = 0.04
-       -> 100 - (5 * 0.5) - (0.04 * 1200)
-       -> 100 - 2.5 - 48
-       -> 약 50점
-
-    3) count = 8, union_area_ratio = 0.06
-       -> 100 - (8 * 0.5) - (0.06 * 1200)
-       -> 100 - 4 - 72
-       -> 약 24점
+    로직:
+    - union_area_ratio가 클수록 감점
+    - count는 보조로만 약하게 감점
+    - log1p(ratio * scale)를 써서 흔한 수준의 ratio에서
+      점수가 너무 빨리 0점이 되는 문제를 완화
     """
     if count <= 0 or union_area_ratio <= 0:
         return 100
 
-    count_penalty = count * PORE_COUNT_PENALTY
-    area_penalty = union_area_ratio * PORE_UNION_AREA_PENALTY
-    raw_score = 100 - count_penalty - area_penalty
+    # area 감점: ratio를 먼저 증폭한 뒤 log1p 적용
+    area_penalty = math.log1p(union_area_ratio * PORE_AREA_LOG_SCALE) * PORE_AREA_LOG_WEIGHT
 
-    return _clamp_score(raw_score)
+    # count 감점: 약하게만 반영
+    count_penalty = count * PORE_COUNT_PENALTY
+
+    return _clamp_score(100 - area_penalty - count_penalty)
 
 
 def calculate_skin_score(analysis_result: dict[str, Any]) -> dict[str, Any]:
     """
-    추론 결과를 받아 피부 점수를 계산합니다.
+    추론 결과를 받아 최종 점수 계산
 
-    analysis_result 예시:
+    입력 예시:
     {
         "acne": {
             "count": 3,
@@ -141,9 +145,11 @@ def calculate_skin_score(analysis_result: dict[str, Any]) -> dict[str, Any]:
     acne_confidences = acne.get("confidences") or []
     pore_union_area_ratio = float(pore.get("union_area_ratio", 0.0) or 0.0)
 
+    # 개별 점수 계산
     acne_score = _calculate_acne_score(acne_count, acne_confidences)
     pore_score = _calculate_pore_score(pore_count, pore_union_area_ratio)
 
+    # 최종 점수 = 가중합
     total_score = _clamp_score(
         (acne_score * ACNE_WEIGHT) + (pore_score * PORE_WEIGHT)
     )
