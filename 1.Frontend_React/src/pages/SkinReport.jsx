@@ -256,10 +256,10 @@ export default function SkinReport() {
                 </div>
 
                 {/* 피부진단점수 차트 */}
-                {renderChart(scoreHistory, "total_score", "피부진단점수", D.cta)}
+                {renderChart(scoreHistory, "total_score", "평균 피부진단점수", D.cta)}
 
                 {/* 달성률 차트 */}
-                {reportData?.daily_rates && renderChart(reportData.daily_rates, "rate", "루틴달성률", D.positive)}
+                {reportData?.daily_rates && renderChart(reportData.daily_rates, "rate", "평균 루틴달성률", D.positive)}
 
                 {/* 이미지 비교 */}
                 {reportData && (reportData.first_day?.image_url || reportData.latest_day?.image_url) && (
@@ -329,7 +329,23 @@ export default function SkinReport() {
                 )}
 
                 {/* 루틴 다시 시작하기 */}
-                <CTAButton onClick={() => navigate("/")}>
+                <CTAButton onClick={async () => {
+                    if (!window.confirm("현재 챌린지를 종료하고 새로 시작할까요?")) return;
+                    try {
+                        const res = await fetch("/api/challenge/stop", {
+                            method: "PATCH",
+                            credentials: "include",
+                        });
+                        const result = await res.json();
+                        if (result.status === "success") {
+                            navigate("/");
+                        } else {
+                            alert("챌린지 종료에 실패했습니다.");
+                        }
+                    } catch (e) {
+                        alert("서버 연결에 실패했습니다.");
+                    }
+                }}>
                     루틴 다시 시작하기
                 </CTAButton>
             </div>

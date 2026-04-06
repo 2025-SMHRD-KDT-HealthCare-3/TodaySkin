@@ -231,13 +231,34 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
 
         const formatData = (data) => data ? { ...data, image_url: data.file_name ? `/${data.file_name}` : null } : null;
 
+        /* 날짜별 달성률 (보유 항목만, 아침+저녁) */
+        const [dailyRates] = await conn.query(`
+            SELECT DATE_FORMAT(a.created_at, '%Y-%m-%d') AS date,
+                ROUND(
+                    SUM(CASE WHEN a.action_yn = 'Y' AND r.routine_time IN ('morning','evening') 
+                             AND IFNULL(uc.source,'추천') = '보유' THEN 1 ELSE 0 END)
+                    / NULLIF(
+                        SUM(CASE WHEN r.routine_time IN ('morning','evening') 
+                                 AND IFNULL(uc.source,'추천') = '보유' THEN 1 ELSE 0 END), 0
+                    ) * 100
+                ) AS rate
+            FROM challenge_details cd
+            JOIN routines r ON cd.routine_no = r.routine_no
+            JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
+            LEFT JOIN user_cosmetics uc ON uc.user_no = ? AND uc.cos_no = r.cos_no
+            WHERE cd.chal_no = ?
+            GROUP BY DATE_FORMAT(a.created_at, '%Y-%m-%d')
+            ORDER BY date
+        `, [user_no, user_no, chal_no]);
+
         res.json({
             status: "success",
             data: {
                 chal_no: Number(chal_no),
                 first_day: formatData(firstResults[0]),
                 latest_day: formatData(latestResults[0]),
-                cumulative_rate: rateResults[0]?.cumulative_rate || 0
+                cumulative_rate: rateResults[0]?.cumulative_rate || 0,
+                daily_rates: dailyRates
             }
         });
     } catch (error) {

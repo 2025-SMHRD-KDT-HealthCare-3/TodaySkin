@@ -67,9 +67,17 @@ export default function Main() {
                 }
 
                 /* 챌린지는 있는데 분석 기록 자체가 없으면 → 분석 페이지로 이동 */
-                if (reportData?.total_score == null) {
-                    navigate("/analyze");
-                    return;
+                /* 챌린지 시작일 이후에 분석이 있는지로 판별 */
+                if (reportData?.total_score == null || reportData?.has_today_analysis === false) {
+                    /* 챌린지 기간 내 분석이 있는지 확인 */
+                    const reportDate = reportData?.report_date?.slice(0, 10);
+                    const sd = new Date(chalData.start_date);
+                    const startDate = `${sd.getFullYear()}-${String(sd.getMonth() + 1).padStart(2, "0")}-${String(sd.getDate()).padStart(2, "0")}`;
+
+                    if (!reportDate || reportDate < startDate) {
+                        navigate("/analyze");
+                        return;
+                    }
                 }
 
                 setPageCase(reportData.has_today_analysis ? 3 : 2);
