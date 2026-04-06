@@ -203,11 +203,7 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
 
             await conn.query(
                 `INSERT INTO daily_reports
-<<<<<<< HEAD
                 (user_no, chal_no, anls_no, line_comment, overall_score,  created_at)
-=======
-                (user_no, chal_no, anls_no, line_comment, overall_score, created_at)
->>>>>>> ab0afc736b0db88bee377e52718a164101f0a415
                 VALUES (?, ?, ?, ?, ?, NOW())`,
                 [
                     user_no,
