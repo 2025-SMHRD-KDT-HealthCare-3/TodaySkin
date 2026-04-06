@@ -15,56 +15,80 @@ const { requireLogin } = require('../middleware/auth');
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
 
-// 1. 루틴 저장 헬퍼
+// 1. 루틴 저장 헬퍼 
 async function saveRoutineToDB(user_no, chal_no, routineData) {
     const timeSlots = ['morning', 'evening', 'special'];
 
     for (const time of timeSlots) {
         const items = routineData[time] || [];
+        
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
+            let cos_no = null;
 
-            let cos_no = item.cos_no || null;
-            if (!cos_no && item.cos_name) {
-                const [cosResult] = await conn.query(
-                    "SELECT cos_no FROM cosmetics WHERE cos_name = ? OR cos_name LIKE ? LIMIT 1",
-                    [item.cos_name, `%${item.cos_name.split(' ')[0]}%`] 
-                );
-                if (cosResult.length > 0) cos_no = cosResult[0].cos_no;
-            }
+            // 아침/저녁(제품 중심)과 스페셜(행위 중심)의 데이터 처리 흐름 분리
+            if (time !== 'special') {
+               
+                if (item.cos_name) {
+                    const [ownedCos] = await conn.query(
+                        `SELECT c.cos_no FROM user_cosmetics uc 
+                         JOIN cosmetics c ON uc.cos_no = c.cos_no 
+                         WHERE uc.user_no = ? AND c.cos_name = ? LIMIT 1`,
+                        [user_no, item.cos_name]
+                    );
 
-            if (!cos_no) continue;
+                    if (ownedCos.length > 0) {
+                        cos_no = ownedCos[0].cos_no; 
+                    } else {
+                        const [cosResult] = await conn.query(
+                            "SELECT cos_no FROM cosmetics WHERE cos_name = ? LIMIT 1",
+                            [item.cos_name]
+                        );
+                        if (cosResult.length > 0) cos_no = cosResult[0].cos_no;
+                    }
+                }
 
-            const [checkOwned] = await conn.query(
-                "SELECT ucos_no FROM user_cosmetics WHERE user_no = ? AND cos_no = ?",
-                [user_no, cos_no]
-            );
+                // 아침/저녁 루틴인데 DB에서 화장품을 못 찾았다면 비정상 데이터이므로 스킵
+                if (!cos_no) continue;
 
-            // 보관함에 없으면 AI가 추천한 것이므로 '추천'으로 저장
-            if (checkOwned.length === 0) {
-                await conn.query(
-                    "INSERT INTO user_cosmetics (user_no, cos_no, source) VALUES (?, ?, '추천')",
+                // 보관함(user_cosmetics) 추가 로직
+                const [checkOwned] = await conn.query(
+                    "SELECT source FROM user_cosmetics WHERE user_no = ? AND cos_no = ?",
                     [user_no, cos_no]
                 );
+                if (checkOwned.length === 0) {
+                    await conn.query(
+                        "INSERT INTO user_cosmetics (user_no, cos_no, source) VALUES (?, ?, '추천')",
+                        [user_no, cos_no]
+                    );
+                }
+
+            } else {
+                // --- 스페셜 루틴: 화장품 매칭 패스 ---
+                // 스페셜 케어는 방법(description)이 없으면 무의미하므로 방어 코드만 추가
+                if (!item.description) continue;
+                
+                // 스페셜은 cos_no를 null로 유지하여 routines 테이블에 삽입됨
             }
 
-            const order = time === 'morning' ? i + 2 : i + 1;
+            // --- 공통 DB 저장 로직 (routines -> challenge_details -> actions) ---
+            const order = i + 1;
 
             const [routineRes] = await conn.query(
-                "INSERT INTO routines (user_no, cos_no, routine_time, routine_order) VALUES (?, ?, ?, ?)",
-                [user_no, cos_no, time, order]
+                "INSERT INTO routines (user_no, cos_no, routine_time, routine_order, description, recommend_reason) VALUES (?, ?, ?, ?, ?, ?)",
+                [user_no, cos_no, time, order, item.description || null, item.recommend_reason || null]
             );
+
             const routine_no = routineRes.insertId;
 
             const [detailRes] = await conn.query(
                 "INSERT INTO challenge_details (chal_no, routine_no) VALUES (?, ?)",
                 [chal_no, routine_no]
             );
-            const detail_no = detailRes.insertId;
-
+            
             await conn.query(
                 "INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', NOW())",
-                [user_no, detail_no]
+                [user_no, detailRes.insertId]
             );
         }
     }
@@ -74,26 +98,23 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
 async function getCumulativeRate(user_no, chal_no) {
     const sql = `
         SELECT 
-            -- 분모: (아침/저녁)이면서 (보유) 화장품인 루틴의 총 개수
-            COUNT(a.action_no) AS total_count,
-            -- 분자: 그 중에서 완료(Y)한 개수
-            SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) AS done_count
+        COUNT(a.action_no) AS total_count,
+        SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) AS done_count
         FROM actions a
         JOIN challenge_details cd ON a.detail_no = cd.detail_no
         JOIN routines r ON cd.routine_no = r.routine_no
         JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = a.user_no
         WHERE a.user_no = ? 
-          AND cd.chal_no = ?
-          AND uc.source = '보유'                     -- 🌟 1. 보유 항목만
-          AND r.routine_time IN ('morning', 'evening') -- 🌟 2. 아침, 저녁만 (special 제외)
+        AND cd.chal_no = ?
+        AND uc.source = '보유'                     
+        AND r.routine_time IN ('morning', 'evening') 
     `;
-    
     const [results] = await conn.query(sql, [user_no, chal_no]);
 
     const total = Number(results[0].total_count) || 0;
     const done = Number(results[0].done_count) || 0;
 
-    // Math.round(반올림 정수)로 계산
+  
     const calculated_rate = total > 0 ? Math.round((done / total) * 100) : 0;
 
     return {
@@ -120,7 +141,7 @@ router.get('/', requireLogin, async (req, res, next) => {
         if (chalResults.length === 0) throw new ValidationError("진행 중인 챌린지가 없습니다.", 404);
 
         const { chal_no, chal_type, day_count } = chalResults[0];
-        
+
         // 1. 오늘 이미 생성된 루틴이 있는지 확인
         const [existingCheck] = await conn.query(`
             SELECT a.action_no 
@@ -129,12 +150,12 @@ router.get('/', requireLogin, async (req, res, next) => {
             WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.created_at) = CURDATE()
             LIMIT 1
         `, [chal_no, user_no]);
-        
+
         // 1일차 / 8일차 이면서 오늘 생성된 기록이 없을 때만 루틴 생성
         const needNewRoutine = (day_count === 1 || day_count === 8) && existingCheck.length === 0;
 
         if (needNewRoutine) {
-            // 오늘 이미 생성된 루틴 데이터가 있으면 먼저 삭제 (멱등성 보장)
+            // 오늘 이미 생성된 루틴 데이터가 있으면 먼저 삭제
             await conn.query(`
                 DELETE a FROM actions a
                 JOIN challenge_details cd ON a.detail_no = cd.detail_no
@@ -152,8 +173,12 @@ router.get('/', requireLogin, async (req, res, next) => {
                 [user_no]
             );
 
+            // source = '보유' 인 것만 가져오기
             const [cosmetics] = await conn.query(
-                "SELECT c.cos_name, c.cos_type FROM user_cosmetics uc JOIN cosmetics c ON uc.cos_no = c.cos_no WHERE uc.user_no = ?",
+                `SELECT c.cos_name, c.cos_type, c.cos_ingredient 
+                    FROM user_cosmetics uc 
+                    JOIN cosmetics c ON uc.cos_no = c.cos_no 
+                    WHERE uc.user_no = ? AND uc.source = '보유'`,  
                 [user_no]
             );
             const userCosmeticsText = cosmetics.map(c => `${c.cos_name}(${c.cos_type})`).join(", ") || "없음";
@@ -203,16 +228,16 @@ router.get('/', requireLogin, async (req, res, next) => {
                     "SELECT total_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no WHERE u.user_no = ? ORDER BY a.created_at DESC LIMIT 2",
                     [user_no]
                 );
-                
+
                 if (prevAnalyses.length === 2) {
                     // 최신 점수와 그 이전 점수의 차이 계산
                     total_score_change = Number((prevAnalyses[0].total_score - prevAnalyses[1].total_score).toFixed(1));
                 }
-                
+
                 const rates = await getCumulativeRate(user_no, chal_no);
                 compliance_rate = rates.cumulative_rate;
             }
-                
+
             // FastAPI 호출
             const pythonRes = await axios.post(`${FASTAPI_URL}/api/routine/generate`, {
                 skin_type: req.user.skin_type || "지성",
@@ -220,13 +245,13 @@ router.get('/', requireLogin, async (req, res, next) => {
                 pore_score: Number(analysis[0]?.pore_score || 0),
                 chal_type: Number(chal_type),
                 week: day_count <= 7 ? 1 : 2,
-                age: Number(req.user.age || 25), 
+                age: Number(req.user.age || 25),
                 gender: req.user.gender || "M",
                 user_cosmetics: userCosmeticsText,
                 cosmetic_candidates: candidatesText,
                 total_score_change: total_score_change,
                 compliance_rate: Number(compliance_rate),
-                fixed_routines: "물 세안" // 추가
+                fixed_routines: "물 세안" 
             }, { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 60000 });
 
             const routine = pythonRes.data.data.routine;
@@ -235,7 +260,7 @@ router.get('/', requireLogin, async (req, res, next) => {
             // DB 저장
             await saveRoutineToDB(user_no, chal_no, routine);
 
-            // ✅ 물 세안 고정 추가 (cos_no: 2486)
+            // 물 세안 고정 추가 (cos_no: 2486)
             for (const time of ['morning']) {
                 const [waterRoutineRes] = await conn.query(
                     "INSERT INTO routines (user_no, cos_no, routine_time, routine_order) VALUES (?, 2486, ?, 1)",
@@ -249,17 +274,19 @@ router.get('/', requireLogin, async (req, res, next) => {
                     "INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', NOW())",
                     [user_no, waterDetailRes.insertId]
                 );
-    }
+            }
 
             // 조회 및 응답 구성 (source, action_no 포함)
+            // GET /api/routine 라우터 내부의 routineSql 수정
             const routineSql = `
                 SELECT r.routine_time, r.routine_order, c.cos_name, 
-                       IFNULL(uc.source, '추천') AS source,
-                       a.action_no,
-                       CASE WHEN a.action_yn = 'Y' THEN true ELSE false END AS completed
+                    r.description, r.recommend_reason,
+                    IFNULL(uc.source, '추천') AS source,
+                    a.action_no,
+                    CASE WHEN a.action_yn = 'Y' THEN true ELSE false END AS completed
                 FROM challenge_details cd
                 JOIN routines r ON cd.routine_no = r.routine_no
-                JOIN cosmetics c ON r.cos_no = c.cos_no
+                LEFT JOIN cosmetics c ON r.cos_no = c.cos_no  -- 🌟 여기를 반드시 LEFT JOIN으로!
                 LEFT JOIN user_cosmetics uc ON uc.user_no = ? AND uc.cos_no = c.cos_no
                 LEFT JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
                 WHERE cd.chal_no = ?
@@ -268,16 +295,20 @@ router.get('/', requireLogin, async (req, res, next) => {
             const [dbRows] = await conn.query(routineSql, [user_no, user_no, chal_no]);
 
             const finalGrouped = { morning: [], evening: [], special: [] };
+           
             dbRows.forEach(row => {
-                const aiItem = routine[row.routine_time]?.find(item => item.cos_name === row.cos_name);
+                const aiItem = routine[row.routine_time]?.find(item =>
+                    (item.cos_name === row.cos_name) && (item.order === row.routine_order)
+                );
+
                 finalGrouped[row.routine_time].push({
                     order: row.routine_order,
-                    name: row.cos_name,
+                    name: row.cos_name || "스페셜 케어", 
                     source: row.source,
                     completed: row.completed,
                     action_no: row.action_no,
-                    description: aiItem?.description || "",
-                    recommend_reason: aiItem?.recommend_reason || null
+                    description: row.description || aiItem?.description || "", 
+                    recommend_reason: row.recommend_reason || aiItem?.recommend_reason || null
                 });
             });
 
@@ -291,11 +322,12 @@ router.get('/', requireLogin, async (req, res, next) => {
             // 이미 생성된 기존 루틴 조회
             const routineSql = `
                 SELECT a.action_no, c.cos_name AS name, r.routine_time, r.routine_order,
+                       r.description, r.recommend_reason,
                        CASE WHEN a.action_yn = 'Y' THEN true ELSE false END AS completed,
                        IFNULL(uc.source, '추천') AS source
                 FROM challenge_details cd
                 JOIN routines r ON cd.routine_no = r.routine_no
-                JOIN cosmetics c ON r.cos_no = c.cos_no
+                LEFT JOIN cosmetics c ON r.cos_no = c.cos_no
                 LEFT JOIN user_cosmetics uc ON uc.user_no = ? AND uc.cos_no = c.cos_no
                 LEFT JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
                 WHERE cd.chal_no = ?
@@ -307,10 +339,12 @@ router.get('/', requireLogin, async (req, res, next) => {
             routineRows.forEach(row => {
                 grouped[row.routine_time].push({
                     order: row.routine_order,
-                    name: row.name,
+                    name: row.name || "스페셜 케어",
                     completed: row.completed,
                     source: row.source,
-                    action_no: row.action_no
+                    action_no: row.action_no,
+                    description: row.description || "", 
+                    recommend_reason: row.recommend_reason || null 
                 });
             });
 
@@ -341,8 +375,8 @@ router.patch('/:action_no', requireLogin, async (req, res, next) => {
         const [chal] = await conn.query("SELECT chal_no FROM challenges WHERE user_no = ? AND chal_status = '진행중' LIMIT 1", [user_no]);
         const rates = await getCumulativeRate(user_no, chal[0]?.chal_no);
 
-        res.json({ 
-            status: "success", 
+        res.json({
+            status: "success",
             message: "상태 변경 완료",
             cumulative_achievement_rate: rates.cumulative_rate,
             daily_rate: rates.daily_rate
