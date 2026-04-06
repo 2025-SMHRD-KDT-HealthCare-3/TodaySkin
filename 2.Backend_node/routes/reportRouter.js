@@ -211,7 +211,7 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
 
         // 첫날 vs 최신 이미지 및 점수 조회
         const query = `
-            SELECT a.acne_score, a.pore_score, a.total_score, a.processing_img, a.created_at
+            SELECT a.acne_score, a.pore_score, a.total_score, u.file_name, a.created_at
             FROM img_analyses a
             JOIN uploads u ON a.upload_no = u.upload_no
             WHERE u.user_no = ? AND u.uploaded_at >= ?
@@ -229,7 +229,7 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
             WHERE cd.chal_no = ?
         `, [user_no, chal_no]);
 
-        const formatData = (data) => data ? { ...data, image_url: data.processing_img ? `/${data.processing_img}` : null } : null;
+        const formatData = (data) => data ? { ...data, image_url: data.file_name ? `/${data.file_name}` : null } : null;
 
         res.json({
             status: "success",

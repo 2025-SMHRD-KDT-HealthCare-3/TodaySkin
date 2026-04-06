@@ -78,7 +78,7 @@ export default function MainDashboard({ pageCase, challenge, report, routine, se
                 }}>
                     챌린지 {challenge?.day_count || 1}일째 진행 중
                 </span>
-                
+
                 {/* 챌린지 사용자 작성 목표 */}
                 <h2 style={{ fontSize: 20, fontWeight: 700, color: D.title, lineHeight: 1.5, margin: 0 }}>
                     " {challenge?.chal_name || ""} "
@@ -91,7 +91,7 @@ export default function MainDashboard({ pageCase, challenge, report, routine, se
 
             {/* case 2: 분석 유도 CTA */}
             {pageCase === 2 && (
-                <CTAButton onClick={() => navigate("/analyze")} style={{ marginBottom: 20 }}>
+                <CTAButton onClick={() => navigate("/analyze")} style={{ marginTop: 10, marginBottom: 20 }}>
                     오늘의 피부 분석하러 가기
                 </CTAButton>
             )}
@@ -109,7 +109,7 @@ export default function MainDashboard({ pageCase, challenge, report, routine, se
                     }}>
                         <span style={{ fontSize: 15, fontWeight: 700, color: D.title }}>가장 최근 분석</span>
                         <span style={{ fontSize: 12, color: D.textLight }}>
-                            {report.report_date || ""}
+                            {report.report_date?.slice(0, 10) || ""}
                         </span>
                     </div>
 
