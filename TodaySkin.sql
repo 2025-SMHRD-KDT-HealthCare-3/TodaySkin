@@ -82,6 +82,8 @@ CREATE TABLE routines
     cos_no        INT            NOT NULL    COMMENT '화장품 고유번호',
     routine_order INT		     NOT NULL    COMMENT '루틴 순서',
     created_at    DATETIME       NOT NULL    DEFAULT NOW() COMMENT '등록 일자',
+    description   TEXT           NULL    COMMENT '화장품 사용방법',
+    recommend_reason TEXT        NULL    COMMENT '화장품 추천 이유',
 	PRIMARY KEY (routine_no)
 );
 
