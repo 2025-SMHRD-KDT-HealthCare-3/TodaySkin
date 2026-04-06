@@ -40,7 +40,7 @@ CREATE TABLE users
     birthdate  DATE           NOT NULL    COMMENT '생년월일',
     gender     CHAR(1)        NOT NULL    CHECK (gender IN ('M','F')) COMMENT '성별',
     nick       VARCHAR(30)    NOT NULL    COMMENT '닉네임',
-    skintype   VARCHAR(20)    NOT NULL    COMMENT '피부 타입',
+    skin_type   VARCHAR(20)    NOT NULL    COMMENT '피부 타입',
     joined_at  DATETIME       NOT NULL    DEFAULT NOW() COMMENT '가입 일자',
 	PRIMARY KEY (user_no)
 );
@@ -66,7 +66,6 @@ CREATE TABLE cosmetics
     cos_brand 	   VARCHAR(50)    NOT NULL    COMMENT '브랜드 명',
     cos_type  	   VARCHAR(30)    NOT NULL    COMMENT '제품 유형',
     cos_ingredient TEXT       	  NOT NULL    COMMENT '주요 성분',
-    cos_function   VARCHAR(255)   NOT NULL    COMMENT '주요 기능',
 	PRIMARY KEY (cos_no)
 );
 
@@ -208,7 +207,6 @@ CREATE TABLE actions
     user_no      INT        NOT NULL    COMMENT '회원 고유번호',
     detail_no    INT        NOT NULL    COMMENT '챌린지 세부 고유번호',
     action_yn    CHAR(1)    NOT NULL    COMMENT '실행 여부',
-    action_memo  TEXT       NULL        COMMENT '실행 메모',
     created_at   DATETIME   NOT NULL    DEFAULT NOW() COMMENT '등록 일자',
 	PRIMARY KEY (action_no)
 );
@@ -307,13 +305,12 @@ ALTER TABLE user_cosmetics
 CREATE TABLE daily_reports
 (
     report_no         INT            NOT NULL    AUTO_INCREMENT COMMENT '리포트 고유번호', 
-    action_no         INT            NOT NULL    COMMENT '실행 고유번호', 
+    action_no         INT            NULL    COMMENT '실행 고유번호', 
     user_no           INT            NOT NULL    COMMENT '회원 고유번호', 
     chal_no           INT            NOT NULL    COMMENT '챌린지 고유번호', 
     anls_no           INT            NOT NULL    COMMENT '이미지분석 고유번호', 
     line_comment      VARCHAR(255)   NOT NULL    COMMENT '한줄 코멘트', 
-    overall_review    INT            NOT NULL    DEFAULT 0 	   COMMENT '종합 평가 점수', 
-    achievement_rate  INT            NOT NULL    DEFAULT 0 	   COMMENT '달성 률', 
+    overall_score    INT            NOT NULL    DEFAULT 0 	   COMMENT '종합 평가 점수', 
     created_at        DATETIME       NOT NULL    DEFAULT NOW() COMMENT '등록 일자', 
 	PRIMARY KEY (report_no)
 );
