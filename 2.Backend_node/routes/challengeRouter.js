@@ -155,7 +155,7 @@ router.patch('/stop', requireLogin, async (req, res, next) => {
         if (result.affectedRows === 0) throw new ValidationError("진행 중인 챌린지가 없습니다.", 404);
 
         // 챌린지 수동 종료시 추천 화장품 삭제
-        await conn.query("DELETE FROM user_cosmetics WHERE user_no = ? AND source = '추천'", [user_no]);
+        await conn.query("DELETE FROM user_cosmetics WHERE user_no = ? AND source = '추천'", [req.user.user_no]);
 
         return res.json({ status: "success", data: { message: "챌린지를 중단하였습니다." } });
     } catch (error) {

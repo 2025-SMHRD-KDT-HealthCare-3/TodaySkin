@@ -66,9 +66,9 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
             `SELECT u.upload_no, u.file_name, a.anls_no, a.processing_img
              FROM uploads u
              LEFT JOIN img_analyses a ON u.upload_no = a.upload_no
-             WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
+             WHERE u.user_no = ? AND DATE(u.uploaded_at) = CURDATE()
              LIMIT 1`,
-            [user_no, today]
+            [user_no]
         );
 
         let upload_no;
@@ -201,27 +201,16 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
 
             const line_comment = commentRes.data.data.line_comment;
 
-            const [rateRes] = await conn.query(`
-                SELECT ROUND(
-                    SUM(CASE WHEN a.action_yn='Y' THEN 1 ELSE 0 END)
-                    / NULLIF(COUNT(a.action_no),0) * 100, 1
-                ) AS cumulative_rate
-                FROM challenge_details cd
-                JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
-                WHERE cd.chal_no = ?
-            `, [user_no, chal[0].chal_no]);
-
             await conn.query(
                 `INSERT INTO daily_reports
-                (user_no, chal_no, anls_no, line_comment, overall_review, achievement_rate, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+                (user_no, chal_no, anls_no, line_comment, overall_score,  created_at)
+                VALUES (?, ?, ?, ?, ?, NOW())`,
                 [
                     user_no,
                     chal[0].chal_no,
                     anls_no,
                     line_comment,
-                    total_score,
-                    rateRes[0]?.cumulative_rate || 0
+                    total_score
                 ]
             );
         }
@@ -297,7 +286,7 @@ router.get('/history', requireLogin, async (req, res, next) => {
     try {
         const [results] = await conn.query(
             `SELECT a.anls_no AS analysis_id,
-                    DATE(u.uploaded_at) AS date,
+                    DATE_FORMAT(u.uploaded_at, '%Y-%m-%d') AS date,
                     a.acne_score,
                     a.pore_score,
                     a.total_score

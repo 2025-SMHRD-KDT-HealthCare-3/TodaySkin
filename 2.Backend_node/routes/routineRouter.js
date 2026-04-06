@@ -15,62 +15,68 @@ const { requireLogin } = require('../middleware/auth');
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
 
-// 1. 루틴 저장 헬퍼
+// 1. 루틴 저장 헬퍼 (구조 개선 버전)
 async function saveRoutineToDB(user_no, chal_no, routineData) {
     const timeSlots = ['morning', 'evening', 'special'];
 
     for (const time of timeSlots) {
         const items = routineData[time] || [];
+        
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             let cos_no = null;
 
-            // 1. 화장품 번호 찾기 (물 세안 포함)
-            // 1. 화장품 번호 찾기 (물 세안 포함)
-            if (item.cos_name) {
-                // 🌟 보유 제품 우선 검색 추가
-                const [ownedCos] = await conn.query(
-                    `SELECT c.cos_no FROM user_cosmetics uc 
-                     JOIN cosmetics c ON uc.cos_no = c.cos_no 
-                     WHERE uc.user_no = ? AND c.cos_name = ? LIMIT 1`,
-                    [user_no, item.cos_name]
-                );
-
-                if (ownedCos.length > 0) {
-                    cos_no = ownedCos[0].cos_no; // 보유 중인 번호 매칭
-                } else {
-                    const [cosResult] = await conn.query(
-                        "SELECT cos_no FROM cosmetics WHERE cos_name = ? LIMIT 1",
-                        [item.cos_name]
+            // 💡 [핵심 개선] 아침/저녁(제품 중심)과 스페셜(행위 중심)의 데이터 처리 흐름 분리
+            if (time !== 'special') {
+                // --- 아침/저녁 루틴: 화장품(cos_no) 매칭 필수 ---
+                if (item.cos_name) {
+                    const [ownedCos] = await conn.query(
+                        `SELECT c.cos_no FROM user_cosmetics uc 
+                         JOIN cosmetics c ON uc.cos_no = c.cos_no 
+                         WHERE uc.user_no = ? AND c.cos_name = ? LIMIT 1`,
+                        [user_no, item.cos_name]
                     );
-                    if (cosResult.length > 0) cos_no = cosResult[0].cos_no;
+
+                    if (ownedCos.length > 0) {
+                        cos_no = ownedCos[0].cos_no; 
+                    } else {
+                        const [cosResult] = await conn.query(
+                            "SELECT cos_no FROM cosmetics WHERE cos_name = ? LIMIT 1",
+                            [item.cos_name]
+                        );
+                        if (cosResult.length > 0) cos_no = cosResult[0].cos_no;
+                    }
                 }
-            }
 
-            // 🌟 수정: cos_no가 없어도 description이 있으면 저장 (스페셜 케어용)
-            if (!cos_no && !item.description) continue;
+                // 아침/저녁 루틴인데 DB에서 화장품을 못 찾았다면 비정상 데이터이므로 스킵
+                if (!cos_no) continue;
 
-            if (cos_no) { // 🌟 화장품 번호가 있을 때만 체크
+                // 보관함(user_cosmetics) 추가 로직
                 const [checkOwned] = await conn.query(
                     "SELECT source FROM user_cosmetics WHERE user_no = ? AND cos_no = ?",
                     [user_no, cos_no]
                 );
-
-                // 보관함에 아예 없을 때만 '추천'으로 저장 (이미 '보유' 중이면 건드리지 않음)
                 if (checkOwned.length === 0) {
                     await conn.query(
                         "INSERT INTO user_cosmetics (user_no, cos_no, source) VALUES (?, ?, '추천')",
                         [user_no, cos_no]
                     );
                 }
+
+            } else {
+                // --- 스페셜 루틴: 화장품 매칭 패스 ---
+                // 스페셜 케어는 방법(description)이 없으면 무의미하므로 방어 코드만 추가
+                if (!item.description) continue;
+                
+                // 스페셜은 cos_no를 null로 유지하여 routines 테이블에 삽입됨
             }
 
-            // 무조건 1번부터 시작하도록 통일
+            // --- 공통 DB 저장 로직 (routines -> challenge_details -> actions) ---
             const order = i + 1;
 
             const [routineRes] = await conn.query(
                 "INSERT INTO routines (user_no, cos_no, routine_time, routine_order, description, recommend_reason) VALUES (?, ?, ?, ?, ?, ?)",
-                [user_no, cos_no, time, order, item.description || null, item.recommend_reason] // order로 변경!
+                [user_no, cos_no, time, order, item.description || null, item.recommend_reason || null]
             );
 
             const routine_no = routineRes.insertId;
@@ -79,11 +85,10 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
                 "INSERT INTO challenge_details (chal_no, routine_no) VALUES (?, ?)",
                 [chal_no, routine_no]
             );
-            const detail_no = detailRes.insertId;
-
+            
             await conn.query(
                 "INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', NOW())",
-                [user_no, detail_no]
+                [user_no, detailRes.insertId]
             );
         }
     }
@@ -106,7 +111,6 @@ async function getCumulativeRate(user_no, chal_no) {
           AND uc.source = '보유'                     -- 🌟 1. 보유 항목만
           AND r.routine_time IN ('morning', 'evening') -- 🌟 2. 아침, 저녁만 (special 제외)
     `;
-
     const [results] = await conn.query(sql, [user_no, chal_no]);
 
     const total = Number(results[0].total_count) || 0;

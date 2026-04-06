@@ -41,20 +41,13 @@ ACNE_CONF_PENALTY = 8.0
 
 # =========================
 # 모공 점수 계수
-# 기존 선형 감점 문제:
-#   union_area_ratio=0.084 → 100 - (0.084 * 1200) = 0점 (흔한 수준에서 0점)
-# 개선: log1p 스케일 적용
-#   ratio=0.01  → log1p(0.01  * 500) * 25 ≈  29.3  → score ≈ 71
-#   ratio=0.05  → log1p(0.05  * 500) * 25 ≈  84.7  → score ≈ 38 (보정 후)
-#   ratio=0.084 → log1p(0.084 * 500) * 25 ≈  97.5  → score ≈ 20 (보정 후)
-#   ratio=0.20  → log1p(0.20  * 500) * 25 ≈ 119.5  → clamp 0
 # =========================
 # union_area_ratio는 먼저 증폭 후 log1p 적용
 # count는 약하게만 반영
 
-PORE_AREA_LOG_SCALE = 500.0
-PORE_AREA_LOG_WEIGHT = 25.0
-PORE_COUNT_PENALTY = 0.3
+PORE_AREA_LOG_SCALE = 80.0
+PORE_AREA_LOG_WEIGHT = 20.0
+PORE_COUNT_PENALTY = 0.1
 
 
 def _safe_avg(values: list[float]) -> float:
