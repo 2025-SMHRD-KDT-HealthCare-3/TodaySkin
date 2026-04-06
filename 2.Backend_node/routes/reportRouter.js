@@ -114,7 +114,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
             let line_comment = null;
             try {
                 const commentRes = await axios.post(
-                    `${FASTAPI_URL}/api/report/comment`,
+                    `${FASTAPI_URL}/api/daily/comment`,
                     {
                         skin_type: req.user.skin_type || "정보 없음",
                         total_score: Number(analysis.total_score),

@@ -48,9 +48,11 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
                 );
             }
 
+            const order = time === 'morning' ? i + 2 : i + 1;
+
             const [routineRes] = await conn.query(
                 "INSERT INTO routines (user_no, cos_no, routine_time, routine_order) VALUES (?, ?, ?, ?)",
-                [user_no, cos_no, time, i + 1]
+                [user_no, cos_no, time, order]
             );
             const routine_no = routineRes.insertId;
 
@@ -70,21 +72,35 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
 
 // 2. 달성률 계산 헬퍼
 async function getCumulativeRate(user_no, chal_no) {
-    const today = new Date().toISOString().slice(0, 10);
     const sql = `
-        SELECT
-            ROUND(SUM(CASE WHEN a.action_yn = 'Y' AND DATE(a.created_at) = ? THEN 1 ELSE 0 END)
-            / NULLIF(COUNT(CASE WHEN DATE(a.created_at) = ? THEN 1 ELSE 0 END), 0) * 100, 1) AS daily_rate,
-            ROUND(SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END)
-            / NULLIF(COUNT(a.action_no), 0) * 100, 1) AS cumulative_rate
-        FROM challenge_details cd
-        JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
-        WHERE cd.chal_no = ?
+        SELECT 
+            -- 분모: (아침/저녁)이면서 (보유) 화장품인 루틴의 총 개수
+            COUNT(a.action_no) AS total_count,
+            -- 분자: 그 중에서 완료(Y)한 개수
+            SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) AS done_count
+        FROM actions a
+        JOIN challenge_details cd ON a.detail_no = cd.detail_no
+        JOIN routines r ON cd.routine_no = r.routine_no
+        JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = a.user_no
+        WHERE a.user_no = ? 
+          AND cd.chal_no = ?
+          AND uc.source = '보유'                     -- 🌟 1. 보유 항목만
+          AND r.routine_time IN ('morning', 'evening') -- 🌟 2. 아침, 저녁만 (special 제외)
     `;
-    const [results] = await conn.query(sql, [today, today, user_no, chal_no]);
+    
+    const [results] = await conn.query(sql, [user_no, chal_no]);
+
+    const total = Number(results[0].total_count) || 0;
+    const done = Number(results[0].done_count) || 0;
+
+    // Math.round(반올림 정수)로 계산
+    const calculated_rate = total > 0 ? Math.round((done / total) * 100) : 0;
+
     return {
-        daily_rate: results[0]?.daily_rate || 0,
-        cumulative_rate: results[0]?.cumulative_rate || 0
+        daily_rate: calculated_rate,
+        cumulative_rate: calculated_rate,
+        total: total,
+        done: done
     };
 }
 
@@ -209,7 +225,8 @@ router.get('/', requireLogin, async (req, res, next) => {
                 user_cosmetics: userCosmeticsText,
                 cosmetic_candidates: candidatesText,
                 total_score_change: total_score_change,
-                compliance_rate: Number(compliance_rate)
+                compliance_rate: Number(compliance_rate),
+                fixed_routines: "물 세안" // 추가
             }, { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 60000 });
 
             const routine = pythonRes.data.data.routine;
@@ -217,6 +234,22 @@ router.get('/', requireLogin, async (req, res, next) => {
 
             // DB 저장
             await saveRoutineToDB(user_no, chal_no, routine);
+
+            // ✅ 물 세안 고정 추가 (cos_no: 2486)
+            for (const time of ['morning']) {
+                const [waterRoutineRes] = await conn.query(
+                    "INSERT INTO routines (user_no, cos_no, routine_time, routine_order) VALUES (?, 2486, ?, 1)",
+                    [user_no, time]
+                );
+                const [waterDetailRes] = await conn.query(
+                    "INSERT INTO challenge_details (chal_no, routine_no) VALUES (?, ?)",
+                    [chal_no, waterRoutineRes.insertId]
+                );
+                await conn.query(
+                    "INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', NOW())",
+                    [user_no, waterDetailRes.insertId]
+                );
+    }
 
             // 조회 및 응답 구성 (source, action_no 포함)
             const routineSql = `
@@ -308,7 +341,12 @@ router.patch('/:action_no', requireLogin, async (req, res, next) => {
         const [chal] = await conn.query("SELECT chal_no FROM challenges WHERE user_no = ? AND chal_status = '진행중' LIMIT 1", [user_no]);
         const rates = await getCumulativeRate(user_no, chal[0]?.chal_no);
 
-        res.json({ status: "success", data: rates });
+        res.json({ 
+            status: "success", 
+            message: "상태 변경 완료",
+            cumulative_achievement_rate: rates.cumulative_rate,
+            daily_rate: rates.daily_rate
+        });
     } catch (error) {
         next(error);
     }
