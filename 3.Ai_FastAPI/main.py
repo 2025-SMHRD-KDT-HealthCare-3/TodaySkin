@@ -132,6 +132,6 @@ def chat(req: ChatRequest):
 def recommend(req: CosmeticRequest):
     return recommend_cosmetics(req)
 
-@app.post("/api/daily/comment", dependencies=[Depends(verify_internal_key)])
+@app.post("/api/report/comment", dependencies=[Depends(verify_internal_key)])
 def daily_comment(req: DailyCommentRequest):
     return generate_daily_comment(req)

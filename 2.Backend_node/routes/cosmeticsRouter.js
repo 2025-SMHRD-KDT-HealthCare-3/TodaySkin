@@ -93,11 +93,12 @@ router.get('/user-cosmetics', requireLogin, async (req, res, next) => {
     try {
         const sql = `
             SELECT uc.ucos_no, uc.cos_no, c.cos_name, c.cos_brand, c.cos_type,
-                   c.cos_ingredients,
+                   c.cos_ingredient,
                    uc.expired_at, uc.source 
             FROM user_cosmetics uc
             JOIN cosmetics c ON uc.cos_no = c.cos_no
             WHERE uc.user_no = ?
+            AND c.cos_name != '물세안'
             ORDER BY uc.created_at DESC
         `;
         const [results] = await conn.query(sql, [req.user.user_no]);
