@@ -10,7 +10,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { D } from "../styles/design";
-import Header from "../components/Header";
 import Spinner from "../components/Spinner";
 import MainChallenge from "./MainChallenge";
 import MainDashboard from "./MainDashboard";
@@ -103,7 +102,6 @@ export default function Main() {
     if (loading) {
         return (
             <div style={{ display: "flex", flexDirection: "column", minHeight: "100%", fontFamily: "inherit" }}>
-                <Header nick={nickname} />
                 <div style={{ flex: 1 }}>
                     <Spinner message="리포트를 준비하고 있어요" />
                 </div>
@@ -113,7 +111,6 @@ export default function Main() {
 
     return (
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100%", fontFamily: "inherit" }}>
-            <Header nick={nickname} />
             <div style={{ padding: "24px 15px", flex: 1 }}>
                 {pageCase === 1 && <MainChallenge nickname={nickname} />}
                 {(pageCase === 2 || pageCase === 3) && (
