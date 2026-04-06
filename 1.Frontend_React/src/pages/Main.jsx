@@ -8,12 +8,15 @@
 */
 
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { D } from "../styles/design";
 import Header from "../components/Header";
+import Spinner from "../components/Spinner";
 import MainChallenge from "./MainChallenge";
 import MainDashboard from "./MainDashboard";
 
 export default function Main() {
+    const navigate = useNavigate();
     const stored = localStorage.getItem("user");
     const nickname = stored ? JSON.parse(stored).nick : "";
 
@@ -62,7 +65,14 @@ export default function Main() {
                         setReport(reportData);
                     }
                 }
-                setPageCase(reportData?.total_score != null && reportData.has_today_analysis ? 3 : 2);
+
+                /* 챌린지는 있는데 분석 기록 자체가 없으면 → 분석 페이지로 이동 */
+                if (reportData?.total_score == null) {
+                    navigate("/analyze");
+                    return;
+                }
+
+                setPageCase(reportData.has_today_analysis ? 3 : 2);
 
                 /* 루틴 */
                 if (routineRes.status === "fulfilled" && routineRes.value.ok) {
@@ -81,13 +91,13 @@ export default function Main() {
         load();
     }, []);
 
-    /* 로딩 */
+    // 로딩화면
     if (loading) {
         return (
             <div style={{ display: "flex", flexDirection: "column", minHeight: "100%", fontFamily: "inherit" }}>
                 <Header nick={nickname} />
-                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <p style={{ color: D.textLight, fontSize: 14 }}>불러오는 중...</p>
+                <div style={{ flex: 1 }}>
+                    <Spinner message="리포트를 준비하고 있어요" />
                 </div>
             </div>
         );
