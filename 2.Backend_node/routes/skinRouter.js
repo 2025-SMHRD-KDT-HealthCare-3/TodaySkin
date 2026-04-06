@@ -45,27 +45,44 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
         const { user_no } = req.user;
         const today = new Date().toISOString().slice(0, 10);
 
-        // 오늘 기존 데이터 및 파일 삭제 (중복 업로드 방지)
+        // 오늘 기존 업로드 확인
         const [existing] = await conn.query(
-            `SELECT u.upload_no, u.file_name, a.processing_img
+            `SELECT u.upload_no, u.file_name, a.anls_no, a.processing_img
              FROM uploads u LEFT JOIN img_analyses a ON u.upload_no = a.upload_no
-             WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?`,
+             WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
+             LIMIT 1`,
             [user_no, today]
         );
 
-        for (const row of existing) {
+        let upload_no;
+        let existingAnlsNo = null;
+
+        /*
+          * 재업로드인 경우 작업 흐름 (오늘 기존 데이터 있음)
+            - uploads → UPDATE (file_name, file_size)
+            - img_analyses → UPDATE (scores, processed_img) — anls_no 유지 → FK 오류 없음
+            - daily_reports → DELETE → 이전 점수 조회 (prev_total_score)
+            - FastAPI /api/report/comment 호출 → daily_reports INSERT (새 코멘트)
+        */
+        if (existing.length > 0) {
+            // 기존 파일만 삭제, DB row는 UPDATE로 재사용 (anls_no 유지 → FK 오류 방지)
+            const row = existing[0];
             await deleteFile(row.file_name);
             await deleteFile(row.processing_img);
-            await conn.query('DELETE FROM img_analyses WHERE upload_no = ?', [row.upload_no]);
-            await conn.query('DELETE FROM uploads WHERE upload_no = ?', [row.upload_no]);
+            upload_no = row.upload_no;
+            existingAnlsNo = row.anls_no;
+            await conn.query(
+                'UPDATE uploads SET file_name=?, file_size=?, uploaded_at=NOW() WHERE upload_no=?',
+                [uploadedPath, req.file.size, upload_no]
+            );
+        } else {
+            // 신규 업로드 정보 저장
+            const [uploadRes] = await conn.query(
+                'INSERT INTO uploads (user_no, file_name, file_size, file_ext, uploaded_at) VALUES (?, ?, ?, ?, NOW())',
+                [user_no, uploadedPath, req.file.size, path.extname(req.file.originalname).toLowerCase()]
+            );
+            upload_no = uploadRes.insertId;
         }
-
-        // 새 업로드 정보 저장
-        const [uploadRes] = await conn.query(
-            'INSERT INTO uploads (user_no, file_name, file_size, file_ext, uploaded_at) VALUES (?, ?, ?, ?, NOW())',
-            [user_no, uploadedPath, req.file.size, path.extname(req.file.originalname).toLowerCase()]
-        );
-        const upload_no = uploadRes.insertId;
 
         // FastAPI 분석 요청
         const absFilePath = path.resolve(__dirname, '..', uploadedPath);
@@ -88,28 +105,73 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
             Buffer.from(aiData.processed_image_base64, 'base64')
         );
 
-        // DB 결과 저장 (total_score 변수 사용)
-        const [analysisRes] = await conn.query(
-            `INSERT INTO img_analyses
-            (upload_no, model_name, anls_result, acne_score, pore_score, total_score, processing_img, created_at)
-            VALUES (?, 'YOLO', ?, ?, ?, ?, ?, NOW())`,
-            [
-                upload_no, 
-                JSON.stringify(aiData), 
-                aiData.acne_score || 0, 
-                aiData.pore_score || 0, 
-                total_score, 
-                processedPath
-            ]
+        // DB 결과 저장
+        let anls_no;
+        if (existingAnlsNo !== null) {
+            // 재업로드: img_analyses UPDATE + 기존 daily_reports 삭제
+            await conn.query(
+                `UPDATE img_analyses
+                 SET anls_result=?, acne_score=?, pore_score=?, total_score=?, processing_img=?, created_at=NOW()
+                 WHERE anls_no=?`,
+                [JSON.stringify(aiData), aiData.acne_score || 0, aiData.pore_score || 0, total_score, processedPath, existingAnlsNo]
+            );
+            anls_no = existingAnlsNo;
+            await conn.query('DELETE FROM daily_reports WHERE anls_no=?', [existingAnlsNo]);
+        } else {
+            // 신규: img_analyses INSERT
+            const [analysisRes] = await conn.query(
+                `INSERT INTO img_analyses
+                (upload_no, model_name, anls_result, acne_score, pore_score, total_score, processing_img, created_at)
+                VALUES (?, 'YOLO', ?, ?, ?, ?, ?, NOW())`,
+                [upload_no, JSON.stringify(aiData), aiData.acne_score || 0, aiData.pore_score || 0, total_score, processedPath]
+            );
+            anls_no = analysisRes.insertId;
+        }
+
+        // 분석 직후 daily_reports 생성 (신규/재업로드 공통)
+        const [chal] = await conn.query(
+            "SELECT chal_no FROM challenges WHERE user_no = ? AND chal_status = '진행중' LIMIT 1",
+            [user_no]
         );
+        if (chal.length > 0) {
+            const [prevScore] = await conn.query(
+                `SELECT a.total_score FROM img_analyses a
+                 JOIN uploads u ON a.upload_no = u.upload_no
+                 WHERE u.user_no = ? AND DATE(u.uploaded_at) < CURDATE()
+                 ORDER BY a.created_at DESC LIMIT 1`,
+                [user_no]
+            );
+            const prev_total_score = prevScore[0]?.total_score || 0;
+
+            const commentRes = await axios.post(
+                `${FASTAPI_URL}/api/report/comment`,
+                { skin_type: req.user.skin_type || "정보 없음", total_score, prev_total_score: Number(prev_total_score) },
+                { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 8000 }
+            );
+            const line_comment = commentRes.data.data.line_comment;
+
+            const [rateRes] = await conn.query(`
+                SELECT ROUND(SUM(CASE WHEN a.action_yn='Y' THEN 1 ELSE 0 END)
+                / NULLIF(COUNT(a.action_no),0)*100,1) AS cumulative_rate
+                FROM challenge_details cd
+                JOIN actions a ON cd.detail_no=a.detail_no AND a.user_no=?
+                WHERE cd.chal_no=?
+            `, [user_no, chal[0].chal_no]);
+
+            await conn.query(
+                `INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, overall_review, achievement_rate, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+                [user_no, chal[0].chal_no, anls_no, line_comment, total_score, rateRes[0]?.cumulative_rate || 0]
+            );
+        }
 
         res.json({
             status: 'success',
             data: {
-                analysis_id: analysisRes.insertId,
+                analysis_id: anls_no,
                 acne_score: aiData.acne_score,
                 pore_score: aiData.pore_score,
-                total_score: total_score, 
+                total_score: total_score,
                 detections: aiData.detections,
                 image_url: `/${processedPath}`
             }

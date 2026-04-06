@@ -36,15 +36,15 @@ router.get('/daily', requireLogin, async (req, res, next) => {
 
         const { chal_no, chal_name, day_count } = chalResults[0];
 
-        // 오늘 분석 데이터 확인
+        // 오늘 분석 데이터 확인 (CURDATE() 사용 → MySQL 서버 기준 날짜로 비교, Node UTC 불일치 방지)
         const [todayResults] = await conn.query(`
-            SELECT a.acne_score, a.pore_score, a.total_score,
+            SELECT a.anls_no, a.acne_score, a.pore_score, a.total_score,
                 DATE(u.uploaded_at) AS report_date
             FROM img_analyses a
             JOIN uploads u ON a.upload_no = u.upload_no
-            WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
+            WHERE u.user_no = ? AND DATE(u.uploaded_at) = CURDATE()
             ORDER BY a.created_at DESC LIMIT 1
-        `, [user_no, today]);
+        `, [user_no]);
 
         const has_today_analysis = todayResults.length > 0;
 
@@ -66,31 +66,37 @@ router.get('/daily', requireLogin, async (req, res, next) => {
         if (has_today_analysis) {
             const analysis = todayResults[0];
 
-
             const [existingReport] = await conn.query(`
-                SELECT line_comment 
-                FROM daily_reports 
-                WHERE user_no = ? AND chal_no = ? AND DATE(created_at) = ?
-                LIMIT 1
-            `, [user_no, chal_no, today]);
+    SELECT line_comment, anls_no
+    FROM daily_reports
+    WHERE user_no = ? AND chal_no = ? AND DATE(created_at) = CURDATE()
+    ORDER BY created_at DESC LIMIT 1
+`, [user_no, chal_no]);
 
             if (existingReport.length > 0) {
-                // 이미 코멘트가 있으면 파이썬 안 부르고 바로 리턴 
-                return res.json({
-                    status: "success",
-                    data: {
-                        has_today_analysis: true,
-                        day_count,
-                        chal_name,
-                        total_score: analysis.total_score,
-                        acne_score: analysis.acne_score,
-                        pore_score: analysis.pore_score,
-                        line_comment: existingReport[0].line_comment, // DB에서 꺼낸 코멘트
-                        daily_rate,
-                        cumulative_rate,
-                        report_date: today
-                    }
-                });
+                /* 같은 분석 → 코멘트 재사용 */
+                if (existingReport[0].anls_no === analysis.anls_no) {
+                    return res.json({
+                        status: "success",
+                        data: {
+                            has_today_analysis: true,
+                            day_count,
+                            chal_name,
+                            total_score: analysis.total_score,
+                            acne_score: analysis.acne_score,
+                            pore_score: analysis.pore_score,
+                            line_comment: existingReport[0].line_comment,
+                            daily_rate,
+                            cumulative_rate,
+                            report_date: today
+                        }
+                    });
+                }
+                /* 재분석 → 이전 코멘트 삭제 */
+                await conn.query(
+                    "DELETE FROM daily_reports WHERE user_no = ? AND chal_no = ? AND DATE(created_at) = CURDATE()",
+                    [user_no, chal_no]
+                );
             }
 
             // 이전 분석 데이터 조회 
@@ -104,7 +110,8 @@ router.get('/daily', requireLogin, async (req, res, next) => {
 
             const prev_total_score = prevResults[0]?.total_score || 0.0;
 
-            //  FastAPI 한줄 코멘트 요청 
+            // FastAPI 한줄 코멘트 요청 (실패해도 분석 결과는 정상 반환)
+            let line_comment = null;
             try {
                 const commentRes = await axios.post(
                     `${FASTAPI_URL}/api/report/comment`,
@@ -116,8 +123,8 @@ router.get('/daily', requireLogin, async (req, res, next) => {
                     { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 8000 }
                 );
 
-                if (commentRes.data && commentRes.data.status === 'success') {
-                    const line_comment = commentRes.data.data.line_comment;
+                if (commentRes.data?.status === 'success') {
+                    line_comment = commentRes.data.data.line_comment;
 
                     // 코멘트 DB 저장
                     await conn.query(`
@@ -128,29 +135,26 @@ router.get('/daily', requireLogin, async (req, res, next) => {
                         WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
                         ORDER BY a.created_at DESC LIMIT 1
                     `, [user_no, chal_no, line_comment, analysis.total_score, cumulative_rate, user_no, today]);
-
-                    return res.json({
-                        status: "success",
-                        data: {
-                            has_today_analysis: true,
-                            day_count,
-                            chal_name,
-                            total_score: analysis.total_score,
-                            acne_score: analysis.acne_score,
-                            pore_score: analysis.pore_score,
-                            line_comment,
-                            daily_rate,
-                            cumulative_rate,
-                            report_date: today
-                        }
-                    });
-                } else {
-                    throw new Error("AI 서버 응답 형식 오류");
                 }
             } catch (aiError) {
                 console.error('[AI COMMENT ERROR]', aiError.message);
-                return next(new Error("AI 코멘트 생성에 실패했습니다. AI 서버를 확인해주세요."));
             }
+
+            return res.json({
+                status: "success",
+                data: {
+                    has_today_analysis: true,
+                    day_count,
+                    chal_name,
+                    total_score: analysis.total_score,
+                    acne_score: analysis.acne_score,
+                    pore_score: analysis.pore_score,
+                    line_comment,
+                    daily_rate,
+                    cumulative_rate,
+                    report_date: today
+                }
+            });
         }
 
         // 오늘 분석 없으면 최근 데이터 반환
@@ -233,7 +237,7 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
                 chal_no: Number(chal_no),
                 first_day: formatData(firstResults[0]),
                 latest_day: formatData(latestResults[0]),
-                cumulative_rate: rateResults[0]?.cumulative_rate || 0 
+                cumulative_rate: rateResults[0]?.cumulative_rate || 0
             }
         });
     } catch (error) {

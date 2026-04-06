@@ -27,70 +27,66 @@ export default function Main() {
     const [chalName, setChalName] = useState("");
 
     /* case 2, 3 — 챌린지 + 리포트 + 루틴 */
-    const [challenge, setChallenge] = useState(null);
-    const [skinResult, setSkinResult] = useState(null);
-    const [routine, setRoutine] = useState(null);
+const [challenge, setChallenge] = useState(null);
+const [report, setReport] = useState(null);
+const [routine, setRoutine] = useState(null);
 
     /* 데이터 로드 */
     useEffect(() => {
-        const load = async () => {
-            try {
-                const [chalRes, skinRes, routineRes] = await Promise.allSettled([
-                    fetch("/api/challenge", { credentials: "include" }),
-                    fetch("/api/reports/daily", { credentials: "include" }),
-                    fetch("/api/routine", { credentials: "include" }),
-                ]);
+    const load = async () => {
+        try {
+            const [chalRes, reportRes, routineRes] = await Promise.allSettled([
+                fetch("/api/challenge", { credentials: "include" }),
+                fetch("/api/reports/daily", { credentials: "include" }),
+                fetch("/api/routine", { credentials: "include" }),
+            ]);
 
-                /* 챌린지 판별 */
-                let chalData = null;
-                if (chalRes.status === "fulfilled" && chalRes.value.ok) {
-                    const chalJson = await chalRes.value.json();
-                    if (chalJson.status === "success" && chalJson.data && chalJson.data.chal_status === "진행중") {
-                        chalData = chalJson.data;
-                        setChallenge(chalData);
-                    }
+            /* 챌린지 판별 */
+            let chalData = null;
+            if (chalRes.status === "fulfilled" && chalRes.value.ok) {
+                const chalJson = await chalRes.value.json();
+                if (chalJson.status === "success" && chalJson.data && chalJson.data.chal_status === "진행중") {
+                    chalData = chalJson.data;
+                    setChallenge(chalData);
                 }
+            }
 
                 /* 챌린지 없음 → case 1 */
                 if (!chalData) {
-                    setPageCase(1);
-                    setLoading(false);
-                    return;
-                }
+                setPageCase(1);
+                setLoading(false);
+                return;
+            }
 
-                /* 스킨 결과로 오늘 분석 유무 판별 */
-                if (skinRes.status === "fulfilled" && skinRes.value.ok) {
-                    const skinJson = await skinRes.value.json();
-                    if (skinJson.status === "success") {
-                        const analysisDate = skinJson.data.created_at?.slice(0, 10);
-                        const now = new Date();
-                        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-
-                        setSkinResult(skinJson.data);
-                        setPageCase(analysisDate === today ? 3 : 2);
-                    } else {
-                        setPageCase(2);
-                    }
+                /* 리포트 → has_today_analysis로 case 2/3 판별 */
+            if (reportRes.status === "fulfilled" && reportRes.value.ok) {
+                const reportJson = await reportRes.value.json();
+                if (reportJson.status === "success") {
+                    setReport(reportJson.data);
+                    setPageCase(reportJson.data.has_today_analysis ? 3 : 2);
                 } else {
                     setPageCase(2);
                 }
+            } else {
+                setPageCase(2);
+            }
 
                 /* 루틴 */
-                if (routineRes.status === "fulfilled" && routineRes.value.ok) {
-                    const routineJson = await routineRes.value.json();
-                    if (routineJson.status === "success") {
-                        setRoutine(routineJson.data);
-                    }
+            if (routineRes.status === "fulfilled" && routineRes.value.ok) {
+                const routineJson = await routineRes.value.json();
+                if (routineJson.status === "success") {
+                    setRoutine(routineJson.data);
                 }
-            } catch (e) {
-                console.error("메인 데이터 로드 실패:", e);
-                setPageCase(1);
-            } finally {
-                setLoading(false);
             }
-        };
-        load();
-    }, []);
+        } catch (e) {
+            console.error("메인 데이터 로드 실패:", e);
+            setPageCase(1);
+        } finally {
+            setLoading(false);
+        }
+    };
+    load();
+}, []);
 
     /* 챌린지 생성 핸들러 */
     const handleCreateChallenge = async () => {
@@ -298,11 +294,12 @@ export default function Main() {
                             }}>
                                 챌린지 {challenge?.day_count || 1}일째 진행 중
                             </span>
+                            {/* AI 한줄 코멘트 */}
                             <h2 style={{ fontSize: 20, fontWeight: 700, color: D.title, lineHeight: 1.5, margin: 0 }}>
-                                오늘도 피부를 위한 한 걸음
+                                " {challenge?.chal_name || ""} "
                             </h2>
                             <p style={{ fontSize: 13, color: D.textLight, marginTop: 6, lineHeight: 1.6 }}>
-                                AI가 분석한 맞춤 루틴으로 건강한 피부를 만들어가요
+                                {report.line_comment}
                             </p>
                         </div>
 
@@ -314,7 +311,7 @@ export default function Main() {
                         )}
 
                         {/* 가장 최근 분석 카드 */}
-                        {skinResult && skinResult.total_score !== null && (
+                        {report && report.total_score !== null && (
                             <div style={{
                                 background: D.white,
                                 borderRadius: 14,
@@ -331,7 +328,7 @@ export default function Main() {
                                         가장 최근 분석
                                     </span>
                                     <span style={{ fontSize: 12, color: D.textLight }}>
-                                        {skinResult.created_at?.slice(0, 10) || ""}
+                                        {report.report_date?.slice(0, 10) || ""}
                                     </span>
                                 </div>
 
@@ -341,18 +338,18 @@ export default function Main() {
                                     <div style={{ flex: 1, textAlign: "center" }}>
                                         <div style={{
                                             fontSize: 36, fontWeight: 700,
-                                            color: getScoreColor(skinResult.total_score),
+                                            color: getScoreColor(report.total_score),
                                             lineHeight: 1,
                                         }}>
-                                            {skinResult.total_score}
+                                            {report.total_score}
                                         </div>
                                         <div style={{ fontSize: 11, color: D.textLight, margin: "4px 0 8px" }}>/100</div>
                                         <div style={{
                                             height: 6, borderRadius: 3, background: D.border, overflow: "hidden",
                                         }}>
                                             <div style={{
-                                                width: `${skinResult.total_score}%`, height: "100%", borderRadius: 3,
-                                                background: getScoreColor(skinResult.total_score),
+                                                width: `${report.total_score}%`, height: "100%", borderRadius: 3,
+                                                background: getScoreColor(report.total_score),
                                                 transition: "width 0.6s ease",
                                             }} />
                                         </div>
@@ -388,17 +385,6 @@ export default function Main() {
                                         </div>
                                     </div>
                                 </div>
-
-                                {/* AI 한줄 코멘트 */}
-                                {skinResult.line_comment && (
-                                    <div style={{
-                                        marginTop: 16, padding: "12px 14px", borderRadius: 10,
-                                        background: D.bgSub, fontSize: 13, color: D.textBody,
-                                        lineHeight: 1.6,
-                                    }}>
-                                        {skinResult.line_comment}
-                                    </div>
-                                )}
                             </div>
                         )}
 

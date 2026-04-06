@@ -142,8 +142,42 @@ router.get('/', requireLogin, async (req, res, next) => {
             );
             const userCosmeticsText = cosmetics.map(c => `${c.cos_name}(${c.cos_type})`).join(", ") || "없음";
 
-            const [candidates] = await conn.query("SELECT cos_name, cos_brand FROM cosmetics");
-            const candidatesText = candidates.map(c => `- ${c.cos_name}(${c.cos_brand})`).join("\n");
+            /*
+              * 기존 cosmetics 테이블 전체를 후보로 전달 → 토큰 부족
+              * 변경내용
+                - 사용자 보유 cos_type 목록 추출 → userTypes
+                - 보유 타입 제외한 카테고리에서 타입별 최대 10개만 조회
+                - 사용자 보유 화장품이 없는 경우(신규 사용자)도 타입별 10개로 처리
+                - cos_type도 함께 전달하여 AI가 카테고리 파악 가능
+            */
+            const userTypes = [...new Set(cosmetics.map(c => c.cos_type))];
+            let candidatesText = "없음";
+            if (userTypes.length > 0) {
+                const placeholders = userTypes.map(() => '?').join(',');
+                const [candidates] = await conn.query(
+                    `SELECT cos_name, cos_brand, cos_type
+                     FROM (
+                         SELECT cos_name, cos_brand, cos_type,
+                                ROW_NUMBER() OVER (PARTITION BY cos_type ORDER BY cos_no) AS rn
+                         FROM cosmetics
+                         WHERE cos_type NOT IN (${placeholders})
+                     ) ranked
+                     WHERE rn <= 10`,
+                    userTypes
+                );
+                candidatesText = candidates.map(c => `- ${c.cos_name}(${c.cos_brand}, ${c.cos_type})`).join("\n");
+            } else {
+                const [candidates] = await conn.query(
+                    `SELECT cos_name, cos_brand, cos_type
+                     FROM (
+                         SELECT cos_name, cos_brand, cos_type,
+                                ROW_NUMBER() OVER (PARTITION BY cos_type ORDER BY cos_no) AS rn
+                         FROM cosmetics
+                     ) ranked
+                     WHERE rn <= 10`
+                );
+                candidatesText = candidates.map(c => `- ${c.cos_name}(${c.cos_brand}, ${c.cos_type})`).join("\n");
+            }
 
             let total_score_change = 0;
             let compliance_rate = 0;
