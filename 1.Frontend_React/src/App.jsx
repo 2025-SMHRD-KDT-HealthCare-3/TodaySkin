@@ -12,7 +12,6 @@ import SkinReport from "./pages/SkinReport";
 import ChalHistory from "./pages/ChalHistory";
 import Chatbot from "./pages/Chatbot";
 import CosManage from "./pages/CosManage";
-import CosRec from "./pages/CosRec";
 
 
 /* 로그인 보호 래퍼 — 미로그인 시 로그인 페이지로 이동 (원래 경로 기억) */
@@ -57,9 +56,6 @@ export default function App() {
                 } />
                 <Route path="/cosmetics" element={
                     <ProtectedRoute isLoggedIn={isLoggedIn}><CosManage /></ProtectedRoute>
-                } />
-                <Route path="/recommend" element={
-                    <ProtectedRoute isLoggedIn={isLoggedIn}><CosRec /></ProtectedRoute>
                 } />
             </Routes>
         }>
