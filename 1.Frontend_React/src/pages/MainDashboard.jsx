@@ -76,7 +76,7 @@ export default function MainDashboard({ pageCase, challenge, report, routine, se
                     background: `${D.cta}15`, color: D.cta, fontSize: 13, fontWeight: 600,
                     marginBottom: 10,
                 }}>
-                    챌린지 {challenge?.day_count || 1}일째 진행 중
+                    챌린지 {challenge?.day_count || 1}일째 진행 중 (종료 D-{(challenge?.chal_type || 7) - (challenge?.day_count || 1)}일)
                 </span>
 
                 {/* 챌린지 사용자 작성 목표 */}
