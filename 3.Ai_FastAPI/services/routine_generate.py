@@ -124,10 +124,28 @@ def generate_routine(req):
         acne_score=req.acne_score,
         pore_score=req.pore_score,
         user_cosmetics=user_cosmetics,
-        top_k=50
+        top_k=25
     )
 
     def _format(cosmetics):
+        if not cosmetics:
+            return "없음"
+        return "\n".join(
+            f"- {c['cos_name']} / {c['cos_brand']} / {c['cos_type']} / {c['cos_ingredient']}"
+            for c in cosmetics
+        )
+    #  후보군 데이터 포맷 함수 수정
+    def _format_candidates(cosmetics):
+        if not cosmetics:
+            return "없음"
+        # 후보군은 성분을 빼고 이름/브랜드/타입만 전달해서 토큰 절약!
+        return "\n".join(
+            f"- {c['cos_name']} / {c['cos_brand']} / {c['cos_type']}"
+            for c in cosmetics
+        )
+
+    #  보유 제품은 성분 분석이 필요하므로 성분 포함
+    def _format_owned(cosmetics):
         if not cosmetics:
             return "없음"
         return "\n".join(
@@ -151,8 +169,8 @@ def generate_routine(req):
         "pore_score": req.pore_score,
         "chal_type": req.chal_type,
         "week": req.week,
-        "user_cosmetics": _format(user_cosmetics),         
-        "cosmetic_candidates": _format(cosmetic_candidates),
+        "user_cosmetics": _format_owned(user_cosmetics),    
+        "cosmetic_candidates": _format_candidates(cosmetic_candidates),
         "week2_prompt": week2_prompt,
     })
 

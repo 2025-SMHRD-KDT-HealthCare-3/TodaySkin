@@ -192,7 +192,7 @@ def search_cosmetic_candidates(
     acne_score: int,
     pore_score: int,
     user_cosmetics: list[dict],
-    top_k: int = 50  
+    top_k: int = 25  
 ) -> list[dict]:
     """
     피부 타입과 점수를 기반으로 벡터 DB에서 후보 화장품을 검색합니다.
