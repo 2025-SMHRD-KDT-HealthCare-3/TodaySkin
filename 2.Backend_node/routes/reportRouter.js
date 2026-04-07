@@ -14,6 +14,7 @@ const { ValidationError } = require('../middleware/errorHandler');
 
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
+const testDate = '2026-04-02';
 
 /*
     데일리 리포트 조회 
@@ -22,12 +23,12 @@ const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 router.get('/daily', requireLogin, async (req, res, next) => {
     try {
         const user_no = req.user.user_no;
-        const today = new Date().toISOString().slice(0, 10);
+        const today = testDate
 
         // 진행 중인 챌린지 조회
         const [chalResults] = await conn.query(
-            "SELECT chal_no, chal_name, DATEDIFF(NOW(), start_date) + 1 AS day_count FROM challenges WHERE user_no = ? AND chal_status = '진행중' ORDER BY created_at DESC LIMIT 1",
-            [user_no]
+            "SELECT chal_no, chal_name, DATEDIFF(?, start_date) + 1 AS day_count FROM challenges WHERE user_no = ? AND chal_status = '진행중' ORDER BY created_at DESC LIMIT 1",
+            [testDate,user_no]
         );
 
         if (chalResults.length === 0) {
@@ -42,9 +43,9 @@ router.get('/daily', requireLogin, async (req, res, next) => {
                 DATE(u.uploaded_at) AS report_date
             FROM img_analyses a
             JOIN uploads u ON a.upload_no = u.upload_no
-            WHERE u.user_no = ? AND DATE(u.uploaded_at) = CURDATE()
+            WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
             ORDER BY a.created_at DESC LIMIT 1
-        `, [user_no]);
+        `, [user_no, testDate]);
 
         const has_today_analysis = todayResults.length > 0;
 
@@ -57,8 +58,8 @@ router.get('/daily', requireLogin, async (req, res, next) => {
                 / NULLIF(COUNT(a.action_no), 0) * 100, 1) AS cumulative_rate
             FROM challenge_details cd
             JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
-            WHERE cd.chal_no = ?
-        `, [today, today, user_no, chal_no]);
+            WHERE cd.chal_no = ? AND DATE(a.created_at) <= ?
+        `, [today, today, user_no, chal_no, testDate]);
 
         const daily_rate = rateResults[0]?.daily_rate || 0;
         const cumulative_rate = rateResults[0]?.cumulative_rate || 0;
@@ -69,9 +70,9 @@ router.get('/daily', requireLogin, async (req, res, next) => {
             const [existingReport] = await conn.query(`
     SELECT line_comment, anls_no
     FROM daily_reports
-    WHERE user_no = ? AND chal_no = ? AND DATE(created_at) = CURDATE()
+    WHERE user_no = ? AND chal_no = ? AND DATE(created_at) = ?
     ORDER BY created_at DESC LIMIT 1
-`, [user_no, chal_no]);
+`, [user_no, chal_no, testDate]);
 
             if (existingReport.length > 0) {
                 /* 같은 분석 → 코멘트 재사용 */
@@ -113,32 +114,35 @@ router.get('/daily', requireLogin, async (req, res, next) => {
             // FastAPI 한줄 코멘트 요청 (실패해도 분석 결과는 정상 반환)
             let line_comment = null;
             try {
-                const commentRes = await axios.post(
-                    `${FASTAPI_URL}/api/daily/comment`,
-                    {
-                        skin_type: req.user.skin_type || "정보 없음",
-                        total_score: Number(analysis.total_score),
-                        prev_total_score: Number(prev_total_score)
-                    },
-                    { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 8000 }
-                );
+    const commentRes = await axios.post(
+        `${FASTAPI_URL}/api/report/comment`,
+        {
+            skin_type: req.user.skin_type || "정보 없음",
+            total_score: Number(analysis.total_score),
+            prev_total_score: Number(prev_total_score)
+        },
+        { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 8000 }
+    );
 
-                if (commentRes.data?.status === 'success') {
-                    line_comment = commentRes.data.data.line_comment;
+    if (commentRes.data?.status === 'success') {
+        line_comment = commentRes.data.data.line_comment;
 
-                    // 코멘트 DB 저장
-                    await conn.query(`
-                        INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, overall_score, created_at)
-                        SELECT ?, ?, a.anls_no, ?, ?, ?, NOW()
-                        FROM img_analyses a
-                        JOIN uploads u ON a.upload_no = u.upload_no
-                        WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
-                        ORDER BY a.created_at DESC LIMIT 1
-                    `, [user_no, chal_no, line_comment, analysis.total_score, user_no, today]);
-                }
-            } catch (aiError) {
-                console.error('[AI COMMENT ERROR]', aiError.message);
-            }
+        await conn.query(`
+            INSERT INTO daily_reports 
+            (user_no, chal_no, anls_no, line_comment, overall_score, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `, [
+            user_no,
+            chal_no,
+            analysis.anls_no,
+            line_comment,
+            analysis.total_score,
+            new Date(testDate + ' 10:00:00')
+        ]);
+    }
+} catch (aiError) {
+    console.error('[AI COMMENT ERROR]', aiError.message);
+}
 
             return res.json({
                 status: "success",
