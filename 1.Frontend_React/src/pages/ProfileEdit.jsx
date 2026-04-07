@@ -7,7 +7,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { D } from "../styles/design";
-import Header from "../components/Header";
 import CTAButton from "../components/CTAButton";
 import FormInput from "../components/FormInput";
 import SkinType from "../components/SkinType";
@@ -27,8 +26,6 @@ export default function ProfileEdit() {
     /* 피부타입 변경용 */
     const [skin_type, setSkinType] = useState("");
 
-    /* 헤더 표시용 닉네임 */
-    const [headerNick, setHeaderNick] = useState("");
 
     /*
      - 페이지 로딩 시 기존 유저 정보 조회
@@ -44,7 +41,6 @@ export default function ProfileEdit() {
                 if (result.status === "success") {
                     setNick(result.data.nick);
                     setSkinType(result.data.skin_type);
-                    setHeaderNick(result.data.nick);
                 }
             } catch (error) {
                 console.log("유저 정보 불러오기 실패");
@@ -141,8 +137,6 @@ export default function ProfileEdit() {
                 fontFamily: "inherit",
             }}
         >
-            {/* 헤더 */}
-            <Header nick={headerNick} />
 
             {/* 페이지 제목 */}
             <div style={{ padding: "28px 24px 0" }}>

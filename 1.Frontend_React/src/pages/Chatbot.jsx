@@ -7,7 +7,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { D } from "../styles/design";
-import Header from "../components/Header";
 import chatIcon from "../assets/chat_icon_ts.png";
 import faceIcon from "../assets/face.png";
 
@@ -111,18 +110,18 @@ export default function Chatbot() {
     return (
         <div style={{
             display: "flex",
+            background: "transparent",
             flexDirection: "column",
-            height: "100vh",
-            fontFamily: "inherit",
+            height: "100%",
+            fontFamily: "inherit",            
         }}>
-            <Header nick={nickname} />
 
             {/* 채팅 영역 */}
             <div style={{
                 flex: 1,
                 overflowY: "auto",
                 padding: "20px 15px",
-                background: D.bgMain,
+                background: "transparent",
             }}>
                 {messages.map((msg, i) => (
                     <div key={i} style={{

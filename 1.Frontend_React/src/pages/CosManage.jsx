@@ -8,15 +8,10 @@
 */
 
 import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
 import { D } from "../styles/design";
-import Header from "../components/Header";
 import CTAButton from "../components/CTAButton";
 
 export default function CosManage() {
-    const navigate = useNavigate();
-    const stored = localStorage.getItem("user");
-    const nickname = stored ? JSON.parse(stored).nick : "";
 
     /* ── 검색 관련 state ── */
     const [keyword, setKeyword] = useState("");
@@ -296,7 +291,6 @@ export default function CosManage() {
             minHeight: "100%",
             fontFamily: "inherit",
         }}>
-            <Header nick={nickname} />
 
             <div style={{ padding: "24px 15px" }}>
 

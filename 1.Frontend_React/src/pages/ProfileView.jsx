@@ -7,7 +7,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { D } from "../styles/design";
-import Header from "../components/Header";
 import CTAButton from "../components/CTAButton";
 import profileImg from "../assets/face.png";
 import { FiBell, FiMail, FiShield } from "react-icons/fi";
@@ -120,8 +119,6 @@ export default function ProfileView() {
                 fontFamily: "inherit",
             }}
         >
-            {/* 헤더 — 닉네임 표시 + 햄버거 메뉴 */}
-            <Header nick={user?.nick || ""} />
 
             {/* 프로필 영역 — 기본 이미지 + 닉네임 + 아이디 */}
             <div
