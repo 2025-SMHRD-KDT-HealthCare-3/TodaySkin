@@ -54,9 +54,21 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
             );
 
             const [detailRes] = await conn.query("INSERT INTO challenge_details (chal_no, routine_no) VALUES (?, ?)", [chal_no, routineRes.insertId]);
-            await conn.query("INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', NOW())", [user_no, detailRes.insertId]);
-        }
+
+            // 해당 루틴이 '보유'인지 확인 후 actions에 삽입
+            const [checkSource] = await conn.query(
+                "SELECT source FROM user_cosmetics WHERE user_no = ? AND cos_no = ?", 
+                [user_no, cos_no]
+            );
+
+            if (checkSource.length > 0 && checkSource[0].source === '보유') {
+                await conn.query(
+                    "INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', NOW())", 
+                    [user_no, detailRes.insertId]
+                );
+            }
     }
+}
 }
 
 // 2. 달성률 계산 헬퍼
@@ -213,16 +225,19 @@ router.get('/', requireLogin, async (req, res, next) => {
             // DB 저장
             await saveRoutineToDB(user_no, chal_no, routine);
 
-        } else {
+            } else {
             // --- [Day 2~7, 9~14] 기존 루틴 불러오기 & 복사 로직 ---
             if (existingCheck.length === 0) {
-                // 오늘 날짜의 actions(체크박스)가 없으면 기존 루틴을 복사해서 오늘용으로 만듦
+                // 오늘 날짜의 actions 데이터가 없으면 '보유' 화장품만 골라서 오늘치 기록 생성
                 await conn.query(`
                     INSERT INTO actions (user_no, detail_no, action_yn, created_at)
-                    SELECT ?, detail_no, 'N', NOW()
-                    FROM challenge_details
-                    WHERE chal_no = ?
-                `, [user_no, chal_no]);
+                    SELECT ?, cd.detail_no, 'N', NOW()
+                    FROM challenge_details cd
+                    JOIN routines r ON cd.routine_no = r.routine_no
+                    JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = ?
+                    WHERE cd.chal_no = ? 
+                    AND uc.source = '보유' -- 추천 화장품은 actions 행을 생성하지 않음
+                `, [user_no, user_no, chal_no]);
             }
         }
 

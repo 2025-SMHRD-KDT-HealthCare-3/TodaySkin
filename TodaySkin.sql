@@ -79,7 +79,7 @@ CREATE TABLE routines
     routine_no    INT            NOT NULL    AUTO_INCREMENT COMMENT '루틴 고유번호',
     user_no       INT            NOT NULL    COMMENT '회원 고유번호',
     routine_time  VARCHAR(10)    NOT NULL    COMMENT '루틴 시기',
-    cos_no        INT            NOT NULL    COMMENT '화장품 고유번호',
+    cos_no        INT            NULL    COMMENT '화장품 고유번호',
     routine_order INT		     NOT NULL    COMMENT '루틴 순서',
     created_at    DATETIME       NOT NULL    DEFAULT NOW() COMMENT '등록 일자',
     description   TEXT           NULL    COMMENT '화장품 사용방법',
