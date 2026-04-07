@@ -30,8 +30,6 @@ const upload = require('../middleware/multerConfig');
 // Node .env 에 저장된 FastAPI 내부 호출용 키
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
-const testDate = '2026-04-02';
-const testDateTime = '2026-04-02 10:00:00';
 
 // ==================================
 // 파일 삭제 헬퍼
@@ -70,9 +68,9 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
             `SELECT u.upload_no, u.file_name, a.anls_no, a.processing_img
              FROM uploads u
              LEFT JOIN img_analyses a ON u.upload_no = a.upload_no
-             WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
+             WHERE u.user_no = ? AND DATE(u.uploaded_at) = CURDATE()
              LIMIT 1`,
-            [user_no, testDate]
+            [user_no]
         );
 
         let upload_no;
@@ -88,13 +86,13 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
             existingAnlsNo = row.anls_no;
 
             await conn.query(
-                'UPDATE uploads SET file_name=?, file_size=?, uploaded_at=? WHERE upload_no=?',
-                [uploadedPath, req.file.size, testDateTime, upload_no]
+                'UPDATE uploads SET file_name=?, file_size=?, uploaded_at=NOW() WHERE upload_no=?',
+                [uploadedPath, req.file.size, upload_no]
             );
         } else {
             const [uploadRes] = await conn.query(
-                'INSERT INTO uploads (user_no, file_name, file_size, file_ext, uploaded_at) VALUES (?, ?, ?, ?, ?)',
-                [user_no, uploadedPath, req.file.size, path.extname(req.file.originalname).toLowerCase(), testDateTime]
+                'INSERT INTO uploads (user_no, file_name, file_size, file_ext, uploaded_at) VALUES (?, ?, ?, ?, NOW())',
+                [user_no, uploadedPath, req.file.size, path.extname(req.file.originalname).toLowerCase()]
             );
 
             upload_no = uploadRes.insertId;
@@ -139,7 +137,7 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
         if (existingAnlsNo !== null) {
             await conn.query(
                 `UPDATE img_analyses
-                 SET anls_result=?, acne_score=?, pore_score=?, total_score=?, processing_img=?, created_at=?
+                 SET anls_result=?, acne_score=?, pore_score=?, total_score=?, processing_img=?, created_at=NOW()
                  WHERE anls_no=?`,
                 [
                     JSON.stringify(dbAiData),
@@ -147,7 +145,6 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
                     aiData.pore_score || 0,
                     total_score,
                     processedPath,
-                    testDateTime,
                     existingAnlsNo
                 ]
             );
@@ -159,15 +156,14 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
             const [analysisRes] = await conn.query(
                 `INSERT INTO img_analyses
                 (upload_no, model_name, anls_result, acne_score, pore_score, total_score, processing_img, created_at)
-                VALUES (?, 'YOLO_2MODELS', ?, ?, ?, ?, ?, ?)`,
+                VALUES (?, 'YOLO_2MODELS', ?, ?, ?, ?, ?, NOW())`,
                 [
                     upload_no,
                     JSON.stringify(dbAiData),
                     aiData.acne_score || 0,
                     aiData.pore_score || 0,
                     total_score,
-                    processedPath,
-                    testDateTime
+                    processedPath
                 ]
             );
 
@@ -185,9 +181,9 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
                 `SELECT a.total_score
                  FROM img_analyses a
                  JOIN uploads u ON a.upload_no = u.upload_no
-                 WHERE u.user_no = ? AND DATE(u.uploaded_at) < ?
+                 WHERE u.user_no = ? AND DATE(u.uploaded_at) < CURDATE()
                  ORDER BY a.created_at DESC LIMIT 1`,
-                [user_no, testDate]
+                [user_no]
             );
 
             const prev_total_score = prevScore[0]?.total_score || 0;
@@ -210,14 +206,13 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
             await conn.query(
                 `INSERT INTO daily_reports
                 (user_no, chal_no, anls_no, line_comment, overall_score,  created_at)
-                VALUES (?, ?, ?, ?, ?, ?)`,
+                VALUES (?, ?, ?, ?, ?, NOW())`,
                 [
                     user_no,
                     chal[0].chal_no,
                     anls_no,
                     line_comment,
-                    total_score,
-                    testDateTime
+                    total_score
                 ]
             );
         }

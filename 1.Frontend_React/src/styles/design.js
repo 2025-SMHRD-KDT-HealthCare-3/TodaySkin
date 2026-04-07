@@ -1,5 +1,6 @@
 export const D = {
-  mainBg: "#FAF9F7",
+  // mainBg: "#FAF9F7",
+  mainBg: "#FDFCFA",
   // bgMain: "#FDFCFA",
   bgMain: "#FFFFFF",
   bgSub: "#F4E5D9",

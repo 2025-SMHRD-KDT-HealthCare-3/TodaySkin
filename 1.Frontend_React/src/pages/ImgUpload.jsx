@@ -23,7 +23,8 @@ import Loading from "../components/Loading";
 /* 허용 확장자 — skinRouter.js와 동일 */
 const ALLOWED_TYPES = ["image/jpeg", "image/png"];
 
-export default function ImgUpload() {
+
+export default function ImgUpload({ onLoadingChange }) {
     const navigate = useNavigate();
     const galleryRef = useRef(null);   // 갤러리용 input
     const cameraRef = useRef(null);    // 카메라용 input
@@ -42,17 +43,13 @@ export default function ImgUpload() {
     const tryFinish = () => {
         if (!analysisResultRef.current || !loadingDoneRef.current) return;
         const result = analysisResultRef.current;
+        onLoadingChange?.(false);
         if (result.ok) {
             navigate("/", { state: { analysisData: result.data } });
         } else {
             setIsLoading(false);
             alert(result.message);
         }
-    };
-
-    const handleLoadingDone = () => {
-        loadingDoneRef.current = true;
-        tryFinish();
     };
 
     /* 미리보기 URL 생성/정리 */
@@ -136,6 +133,7 @@ export default function ImgUpload() {
         analysisResultRef.current = null;
         loadingDoneRef.current = false;
         setIsLoading(true);
+        onLoadingChange?.(true);
 
         try {
             const formData = new FormData();
@@ -156,8 +154,6 @@ export default function ImgUpload() {
         } catch {
             analysisResultRef.current = { ok: false, message: "서버 연결에 실패했습니다." };
         }
-
-        tryFinish();
     };
 
     return (
@@ -169,7 +165,10 @@ export default function ImgUpload() {
         }}>
 
             {/* 로딩 오버레이 — 분석 중일 때 전체 화면 덮음 */}
-            {isLoading && <Loading onDone={handleLoadingDone} />}
+            {isLoading && <Loading onDone={() => {
+                loadingDoneRef.current = true;
+                tryFinish();
+            }} />}
 
             <div style={{ padding: "24px 15px" }}>
 

@@ -13,7 +13,6 @@ const conn = require('../config/database');
 const { requireLogin } = require('../middleware/auth');
 const { ValidationError } = require('../middleware/errorHandler');
 
-const testDate = '2026-04-02';
 
 /*
     챌린지 생성 
@@ -57,15 +56,15 @@ router.post('/', requireLogin, async (req, res, next) => {
         }
 
         // [신규 챌린지 계산]
-        const startDate = new Date(testDate);
-        const endDate = new Date(testDate);
+        const startDate = new Date();
+        const endDate = new Date();
         endDate.setDate(endDate.getDate() + Number(chal_type) - 1);
 
         const formatDate = (d) => d.toISOString().slice(0, 10);
 
         const [result] = await conn.query(
-            "INSERT INTO challenges (user_no, chal_name, start_date, end_date, chal_type, chal_status, created_at) VALUES (?, ?, ?, ?, ?, '진행중', ?)",
-            [user_no, chal_name, formatDate(startDate), formatDate(endDate), chal_type, testDate]
+            "INSERT INTO challenges (user_no, chal_name, start_date, end_date, chal_type, chal_status, created_at) VALUES (?, ?, ?, ?, ?, '진행중', NOW())",
+            [user_no, chal_name, formatDate(startDate), formatDate(endDate), chal_type]
         );
 
         return res.status(201).json({
@@ -99,7 +98,7 @@ router.post('/', requireLogin, async (req, res, next) => {
 router.get('/', requireLogin, async (req, res, next) => {
     try {
         const user_no = req.user.user_no;
-        const today = testDate;
+        const today = new Date().toISOString().slice(0, 10);
 
         // 진행중인 최신 챌린지 1개 조회
         const [results] = await conn.query(`
@@ -108,7 +107,7 @@ router.get('/', requireLogin, async (req, res, next) => {
             FROM challenges
             WHERE user_no = ? AND chal_status = '진행중'
             ORDER BY created_at DESC LIMIT 1
-        `, [testDate, user_no]);
+        `, [today, user_no]);
 
         if (results.length === 0) {
             return res.json({ status: "success", data: null, message: "진행 중인 챌린지가 없습니다." });

@@ -4,8 +4,6 @@
  - PATCH /api/routine/:action_no 루틴 체크 (완료/미완료 토글)
 */
 
-
-
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
@@ -16,8 +14,7 @@ const { requireLogin } = require('../middleware/auth');
 
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
-const testDate = '2026-04-02'; 
-const testDateTime = '2026-04-02 10:00:00';
+
 // 1. 루틴 저장 헬퍼
 async function saveRoutineToDB(user_no, chal_no, routineData) {
     const timeSlots = ['morning', 'evening', 'special'];
@@ -57,13 +54,21 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
             );
 
             const [detailRes] = await conn.query("INSERT INTO challenge_details (chal_no, routine_no) VALUES (?, ?)", [chal_no, routineRes.insertId]);
-            // 보유 화장품인 경우에만 actions 테이블에 저장
-            const [currentSource] = await conn.query("SELECT source FROM user_cosmetics WHERE user_no = ? AND cos_no = ?", [user_no, cos_no]);
-            if (currentSource[0]?.source === '보유' || item.cos_name === '물 세안') {
-                await conn.query("INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', ?)", [user_no, detailRes.insertId, testDateTime]);
+
+            // 해당 루틴이 '보유'인지 확인 후 actions에 삽입
+            const [checkSource] = await conn.query(
+                "SELECT source FROM user_cosmetics WHERE user_no = ? AND cos_no = ?", 
+                [user_no, cos_no]
+            );
+
+            if (checkSource.length > 0 && checkSource[0].source === '보유') {
+                await conn.query(
+                    "INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', NOW())", 
+                    [user_no, detailRes.insertId]
+                );
             }
-        }
     }
+}
 }
 
 // 2. 달성률 계산 헬퍼
@@ -102,12 +107,12 @@ router.get('/', requireLogin, async (req, res, next) => {
 
     try {
         const chalSql = `
-            SELECT chal_no, chal_type, start_date, DATEDIFF(?, start_date) + 1 AS day_count
+            SELECT chal_no, chal_type, start_date, DATEDIFF(NOW(), start_date) + 1 AS day_count
             FROM challenges
             WHERE user_no = ? AND chal_status = '진행중'
             ORDER BY created_at DESC LIMIT 1
         `;
-        const [chalResults] = await conn.query(chalSql, [testDate, user_no]);
+        const [chalResults] = await conn.query(chalSql, [user_no]);
 
         if (chalResults.length === 0) throw new ValidationError("진행 중인 챌린지가 없습니다.", 404);
 
@@ -118,9 +123,9 @@ router.get('/', requireLogin, async (req, res, next) => {
             SELECT a.action_no 
             FROM actions a
             JOIN challenge_details cd ON a.detail_no = cd.detail_no
-            WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.created_at) = ?
+            WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.created_at) = CURDATE()
             LIMIT 1
-        `, [chal_no, user_no, testDate]);
+        `, [chal_no, user_no]);
 
         // 1일차 / 8일차 이면서 오늘 생성된 기록이 없을 때만 루틴 생성
         const needNewRoutine = (day_count === 1 || day_count === 8) && existingCheck.length === 0;
@@ -201,6 +206,7 @@ router.get('/', requireLogin, async (req, res, next) => {
 
             // FastAPI 호출
             const pythonRes = await axios.post(`${FASTAPI_URL}/api/routine/generate`, {
+                user_no: Number(user_no),
                 skin_type: req.user.skin_type || "지성",
                 acne_score: Number(analysis[0]?.acne_score || 0),
                 pore_score: Number(analysis[0]?.pore_score || 0),
@@ -208,8 +214,6 @@ router.get('/', requireLogin, async (req, res, next) => {
                 week: day_count <= 7 ? 1 : 2,
                 age: Number(req.user.age || 25),
                 gender: req.user.gender || "M",
-                user_cosmetics: userCosmeticsText,
-                cosmetic_candidates: candidatesText,
                 total_score_change: total_score_change,
                 compliance_rate: Number(compliance_rate),
                 fixed_routines: "물 세안"
@@ -221,20 +225,21 @@ router.get('/', requireLogin, async (req, res, next) => {
             // DB 저장
             await saveRoutineToDB(user_no, chal_no, routine);
 
-        } else {
+            } else {
             // --- [Day 2~7, 9~14] 기존 루틴 불러오기 & 복사 로직 ---
             if (existingCheck.length === 0) {
-                // 매일 아침 루틴 복사 시, '보유' 화장품인 루틴만 골라서 새 actions 생성
+                // 오늘 날짜의 actions 데이터가 없으면 '보유' 화장품만 골라서 오늘치 기록 생성
                 await conn.query(`
-                INSERT INTO actions (user_no, detail_no, action_yn, created_at)
-                SELECT ?, cd.detail_no, 'N', ?
-                FROM challenge_details cd
-                JOIN routines r ON cd.routine_no = r.routine_no
-                JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = ?
-                WHERE cd.chal_no = ? AND uc.source = '보유'
-            `, [user_no, testDateTime, user_no, chal_no ]);
+                    INSERT INTO actions (user_no, detail_no, action_yn, created_at)
+                    SELECT ?, cd.detail_no, 'N', NOW()
+                    FROM challenge_details cd
+                    JOIN routines r ON cd.routine_no = r.routine_no
+                    JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = ?
+                    WHERE cd.chal_no = ? 
+                    AND uc.source = '보유' -- 추천 화장품은 actions 행을 생성하지 않음
+                `, [user_no, user_no, chal_no]);
+            }
         }
-    }
 
         // 생성(1일차)이든 복사(2일차)이든, 오늘 날짜의 통합 데이터를 DB에서 꺼내서 응답함
         const routineSql = `
@@ -247,11 +252,11 @@ router.get('/', requireLogin, async (req, res, next) => {
             JOIN routines r ON cd.routine_no = r.routine_no
             LEFT JOIN cosmetics c ON r.cos_no = c.cos_no 
             LEFT JOIN user_cosmetics uc ON uc.user_no = ? AND uc.cos_no = c.cos_no
-            LEFT JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ? AND DATE(a.created_at) = ?
-            WHERE cd.chal_no = ?
+            LEFT JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
+            WHERE cd.chal_no = ? AND DATE(a.created_at) = CURDATE()
             ORDER BY r.routine_time, r.routine_order
         `;
-        const [dbRows] = await conn.query(routineSql, [user_no, user_no, chal_no, testDate]);
+        const [dbRows] = await conn.query(routineSql, [user_no, user_no, chal_no]);
 
         const finalGrouped = { morning: [], evening: [], special: [] };
 

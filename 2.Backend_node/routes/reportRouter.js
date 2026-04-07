@@ -14,7 +14,6 @@ const { ValidationError } = require('../middleware/errorHandler');
 
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
-const testDate = '2026-04-02';
 
 /*
     데일리 리포트 조회 
@@ -23,12 +22,12 @@ const testDate = '2026-04-02';
 router.get('/daily', requireLogin, async (req, res, next) => {
     try {
         const user_no = req.user.user_no;
-        const today = testDate
+        const today = new Date().toISOString().slice(0, 10);
 
         // 진행 중인 챌린지 조회
         const [chalResults] = await conn.query(
-            "SELECT chal_no, chal_name, DATEDIFF(?, start_date) + 1 AS day_count FROM challenges WHERE user_no = ? AND chal_status = '진행중' ORDER BY created_at DESC LIMIT 1",
-            [testDate,user_no]
+            "SELECT chal_no, chal_name, DATEDIFF(NOW(), start_date) + 1 AS day_count FROM challenges WHERE user_no = ? AND chal_status = '진행중' ORDER BY created_at DESC LIMIT 1",
+            [user_no]
         );
 
         if (chalResults.length === 0) {
@@ -43,23 +42,31 @@ router.get('/daily', requireLogin, async (req, res, next) => {
                 DATE(u.uploaded_at) AS report_date
             FROM img_analyses a
             JOIN uploads u ON a.upload_no = u.upload_no
-            WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
+            WHERE u.user_no = ? AND DATE(u.uploaded_at) = CURDATE()
             ORDER BY a.created_at DESC LIMIT 1
-        `, [user_no, testDate]);
+        `, [user_no]);
 
         const has_today_analysis = todayResults.length > 0;
 
         // 달성률 계산
-        const [rateResults] = await conn.query(`
-            SELECT
-                ROUND(SUM(CASE WHEN a.action_yn = 'Y' AND DATE(a.created_at) = ? THEN 1 ELSE 0 END)
-                / NULLIF(SUM(CASE WHEN DATE(a.created_at) = ? THEN 1 ELSE 0 END), 0) * 100, 1) AS daily_rate,
-                ROUND(SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END)
-                / NULLIF(COUNT(a.action_no), 0) * 100, 1) AS cumulative_rate
-            FROM challenge_details cd
-            JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
-            WHERE cd.chal_no = ? AND DATE(a.created_at) <= ?
-        `, [today, today, user_no, chal_no, testDate]);
+       const [dailyRates] = await conn.query(`
+            SELECT 
+                DATE_FORMAT(a.created_at, '%Y-%m-%d') AS date,
+                ROUND(
+                    SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) -- 'Y'로 체크한 것만 합산
+                    / COUNT(a.action_no) * 100                        -- 해당 날짜의 전체 '보유' 루틴 수로 나눔
+                ) AS rate
+            FROM actions a
+            JOIN challenge_details cd ON a.detail_no = cd.detail_no
+            JOIN routines r ON cd.routine_no = r.routine_no
+            -- user_cosmetics와 조인하여 '보유' 상태인 것만 필터링
+            JOIN user_cosmetics uc ON uc.cos_no = r.cos_no AND uc.user_no = a.user_no
+            WHERE a.user_no = ? 
+            AND cd.chal_no = ? 
+            AND uc.source = '보유' -- '추천'은 여기서 걸러집니다.
+            GROUP BY DATE(a.created_at)
+            ORDER BY date ASC
+        `, [user_no, chal_no]);
 
         const daily_rate = rateResults[0]?.daily_rate || 0;
         const cumulative_rate = rateResults[0]?.cumulative_rate || 0;
@@ -70,9 +77,9 @@ router.get('/daily', requireLogin, async (req, res, next) => {
             const [existingReport] = await conn.query(`
     SELECT line_comment, anls_no
     FROM daily_reports
-    WHERE user_no = ? AND chal_no = ? AND DATE(created_at) = ?
+    WHERE user_no = ? AND chal_no = ? AND DATE(created_at) = CURDATE()
     ORDER BY created_at DESC LIMIT 1
-`, [user_no, chal_no, testDate]);
+`, [user_no, chal_no]);
 
             if (existingReport.length > 0) {
                 /* 같은 분석 → 코멘트 재사용 */
@@ -114,35 +121,32 @@ router.get('/daily', requireLogin, async (req, res, next) => {
             // FastAPI 한줄 코멘트 요청 (실패해도 분석 결과는 정상 반환)
             let line_comment = null;
             try {
-    const commentRes = await axios.post(
-        `${FASTAPI_URL}/api/report/comment`,
-        {
-            skin_type: req.user.skin_type || "정보 없음",
-            total_score: Number(analysis.total_score),
-            prev_total_score: Number(prev_total_score)
-        },
-        { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 8000 }
-    );
+                const commentRes = await axios.post(
+                    `${FASTAPI_URL}/api/daily/comment`,
+                    {
+                        skin_type: req.user.skin_type || "정보 없음",
+                        total_score: Number(analysis.total_score),
+                        prev_total_score: Number(prev_total_score)
+                    },
+                    { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 8000 }
+                );
 
-    if (commentRes.data?.status === 'success') {
-        line_comment = commentRes.data.data.line_comment;
+                if (commentRes.data?.status === 'success') {
+                    line_comment = commentRes.data.data.line_comment;
 
-        await conn.query(`
-            INSERT INTO daily_reports 
-            (user_no, chal_no, anls_no, line_comment, overall_score, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `, [
-            user_no,
-            chal_no,
-            analysis.anls_no,
-            line_comment,
-            analysis.total_score,
-            new Date(testDate + ' 10:00:00')
-        ]);
-    }
-} catch (aiError) {
-    console.error('[AI COMMENT ERROR]', aiError.message);
-}
+                    // 코멘트 DB 저장
+                    await conn.query(`
+                        INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, overall_review, achievement_rate, created_at)
+                        SELECT ?, ?, a.anls_no, ?, ?, ?, NOW()
+                        FROM img_analyses a
+                        JOIN uploads u ON a.upload_no = u.upload_no
+                        WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
+                        ORDER BY a.created_at DESC LIMIT 1
+                    `, [user_no, chal_no, line_comment, analysis.total_score, cumulative_rate, user_no, today]);
+                }
+            } catch (aiError) {
+                console.error('[AI COMMENT ERROR]', aiError.message);
+            }
 
             return res.json({
                 status: "success",
@@ -236,24 +240,24 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
         const formatData = (data) => data ? { ...data, image_url: data.file_name ? `/${data.file_name}` : null } : null;
 
         /* 날짜별 달성률 (보유 항목만, 아침+저녁) */
-        const [dailyRates] = await conn.query(`
-            SELECT DATE_FORMAT(a.created_at, '%Y-%m-%d') AS date,
-                ROUND(
-                    SUM(CASE WHEN a.action_yn = 'Y' AND r.routine_time IN ('morning','evening') 
-                             AND IFNULL(uc.source,'추천') = '보유' THEN 1 ELSE 0 END)
-                    / NULLIF(
-                        SUM(CASE WHEN r.routine_time IN ('morning','evening') 
-                                 AND IFNULL(uc.source,'추천') = '보유' THEN 1 ELSE 0 END), 0
-                    ) * 100
-                ) AS rate
-            FROM challenge_details cd
-            JOIN routines r ON cd.routine_no = r.routine_no
-            JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
-            LEFT JOIN user_cosmetics uc ON uc.user_no = ? AND uc.cos_no = r.cos_no
-            WHERE cd.chal_no = ?
-            GROUP BY DATE_FORMAT(a.created_at, '%Y-%m-%d')
-            ORDER BY date
-        `, [user_no, user_no, chal_no, end_date]);
+       const [dailyRates] = await conn.query(`
+                SELECT 
+                    DATE_FORMAT(a.created_at, '%Y-%m-%d') AS date,
+                    ROUND(
+                        SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) 
+                        / COUNT(a.action_no) * 100
+                    ) AS rate
+                FROM actions a
+                JOIN challenge_details cd ON a.detail_no = cd.detail_no
+                JOIN routines r ON cd.routine_no = r.routine_no
+                JOIN user_cosmetics uc ON uc.cos_no = r.cos_no AND uc.user_no = a.user_no
+                WHERE a.user_no = ? 
+                AND cd.chal_no = ? 
+                AND uc.source = '보유'                -- 내가 가진 화장품만
+                AND r.routine_time IN ('morning', 'evening') -- 아침과 저녁 루틴만
+                GROUP BY DATE(a.created_at)
+                ORDER BY date ASC
+            `, [user_no, chal_no]);
 
         res.json({
             status: "success",

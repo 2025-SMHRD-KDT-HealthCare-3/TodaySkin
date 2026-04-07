@@ -29,6 +29,9 @@ from services.chatbot_message import get_chat_response
 from services.cosmetics_recommend import recommend_cosmetics
 from services.report_comment import generate_daily_comment
 
+# 벡터 DB 초기화 함수
+from services.cosmetic_vector_search import init_cosmetic_vector_db
+
 # 전역 에러 핸들러
 from middleware.error_handler import (
     ValidationError,
@@ -38,6 +41,11 @@ from middleware.error_handler import (
 
 # FastAPI 앱 생성
 app = FastAPI()
+
+
+@app.on_event("startup")
+async def startup():
+    init_cosmetic_vector_db()
 
 # ==================================
 # CORS 설정
@@ -81,8 +89,8 @@ class RoutineRequest(BaseModel):
     pore_score: int = 0
     chal_type: int = 7
     week: int = 1
-    user_cosmetics: str = ""
-    cosmetic_candidates: str = ""
+    user_no: int = 0
+    compliance_rate: int = 0
     age: int = 0
     gender: str = ""
     total_score_change: float = 0.0
@@ -109,8 +117,7 @@ class CosmeticRequest(BaseModel):
     skin_type: str = ""
     acne_score: int = 0
     pore_score: int = 0
-    cosmetic_candidates: list = []
-    owned_categories: list = []
+    user_no: int = 0
 
 
 # ---------- 데일리 리포트 코멘트 요청 ----------

@@ -15,6 +15,42 @@ const { ValidationError } = require('../middleware/errorHandler');
 
 const router = express.Router();
 
+// ============================================================
+// [내부 전용] 전체 화장품 목록 조회 (FastAPI 벡터 DB용)
+// GET /api/cosmetics/all
+// ============================================================
+router.get('/all', async (req, res, next) => {
+    try {
+        const [results] = await conn.query(
+            `SELECT cos_no, cos_name, cos_brand, cos_type, cos_ingredient FROM cosmetics`
+        );
+        res.json(results);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// ============================================================
+// [내부 전용] 유저 보유 화장품 조회 (FastAPI용)
+// GET /api/cosmetics/user-cosmetics-internal/:user_no
+// ============================================================
+router.get('/user-cosmetics-internal/:user_no', async (req, res, next) => {
+    try {
+        const { user_no } = req.params;
+        const [results] = await conn.query(
+            `SELECT uc.ucos_no, uc.cos_no, c.cos_name, c.cos_brand, c.cos_type,
+                    c.cos_ingredient, uc.expired_at, uc.source
+             FROM user_cosmetics uc
+             JOIN cosmetics c ON uc.cos_no = c.cos_no
+             WHERE uc.user_no = ?
+             AND c.cos_name != '물세안'`,
+            [user_no]
+        );
+        res.json(results);
+    } catch (error) {
+        next(error);
+    }
+});
 
 // ============================================================
 // 화장품 검색 (cosmetics 테이블)
@@ -98,7 +134,7 @@ router.get('/user-cosmetics', requireLogin, async (req, res, next) => {
             FROM user_cosmetics uc
             JOIN cosmetics c ON uc.cos_no = c.cos_no
             WHERE uc.user_no = ?
-            AND c.cos_name != '물 세안'
+            AND c.cos_name NOT LIKE '%물%세안%'
             ORDER BY uc.created_at DESC
         `;
         const [results] = await conn.query(sql, [req.user.user_no]);
