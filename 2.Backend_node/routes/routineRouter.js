@@ -15,6 +15,7 @@ const { requireLogin } = require('../middleware/auth');
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
 
+// 1. 루틴 저장 헬퍼
 async function saveRoutineToDB(user_no, chal_no, routineData) {
     const timeSlots = ['morning', 'evening', 'special'];
 
@@ -29,7 +30,7 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
                 if (cosResult.length > 0) cos_no = cosResult[0].cos_no;
             }
 
-            // 🌟 [개선] DB에 없는 제품(cos_no null)이라도 description이 있으면 일단 저장 (루틴 개수 유지)
+            // DB에 없는 제품(cos_no null)이라도 description이 있으면 일단 저장 (루틴 개수 유지)
             if (time !== 'special' && !cos_no && !item.cos_name) continue;
             if (time === 'special' && !item.description) continue;
 
@@ -41,7 +42,7 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
                     await conn.query("INSERT INTO user_cosmetics (user_no, cos_no, source) VALUES (?, ?, ?)",
                         [user_no, cos_no, isWaterWash ? '보유' : '추천']);
                 } else if (isWaterWash && checkOwned[0].source === '추천') {
-                    // 🌟 이미 추천으로 되어있어도 물 세안이면 보유로 강제 업데이트
+                    // 이미 추천으로 되어있어도 물 세안이면 보유로 강제 업데이트
                     await conn.query("UPDATE user_cosmetics SET source = '보유' WHERE user_no = ? AND cos_no = ?", [user_no, cos_no]);
                 }
             }
@@ -70,14 +71,13 @@ async function getCumulativeRate(user_no, chal_no) {
         JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = a.user_no
         WHERE a.user_no = ? 
         AND cd.chal_no = ?
-        AND uc.source = '보유'                     
+        AND uc.source = '보유'                    
         AND r.routine_time IN ('morning', 'evening') 
     `;
     const [results] = await conn.query(sql, [user_no, chal_no]);
 
     const total = Number(results[0].total_count) || 0;
     const done = Number(results[0].done_count) || 0;
-
 
     const calculated_rate = total > 0 ? Math.round((done / total) * 100) : 0;
 
@@ -106,7 +106,7 @@ router.get('/', requireLogin, async (req, res, next) => {
 
         const { chal_no, chal_type, day_count } = chalResults[0];
 
-        // 1. 오늘 이미 생성된 루틴이 있는지 확인
+        // 오늘 이미 생성된 루틴이 있는지 확인
         const [existingCheck] = await conn.query(`
             SELECT a.action_no 
             FROM actions a
@@ -130,14 +130,13 @@ router.get('/', requireLogin, async (req, res, next) => {
                 DELETE FROM challenge_details 
                 WHERE chal_no = ? AND detail_no NOT IN (SELECT detail_no FROM actions)
             `, [chal_no]);
-
+            
             // AI 생성을 위한 데이터 준비
             const [analysis] = await conn.query(
                 "SELECT acne_score, pore_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no WHERE u.user_no = ? ORDER BY a.created_at DESC LIMIT 1",
                 [user_no]
             );
 
-            // source = '보유' 인 것만 가져오기
             const [cosmetics] = await conn.query(
                 `SELECT c.cos_name, c.cos_type, c.cos_ingredient 
                     FROM user_cosmetics uc 
@@ -147,14 +146,6 @@ router.get('/', requireLogin, async (req, res, next) => {
             );
             const userCosmeticsText = cosmetics.map(c => `${c.cos_name}(${c.cos_type})`).join(", ") || "없음";
 
-            /*
-              * 기존 cosmetics 테이블 전체를 후보로 전달 → 토큰 부족
-              * 변경내용
-                - 사용자 보유 cos_type 목록 추출 → userTypes
-                - 보유 타입 제외한 카테고리에서 타입별 최대 10개만 조회
-                - 사용자 보유 화장품이 없는 경우(신규 사용자)도 타입별 10개로 처리
-                - cos_type도 함께 전달하여 AI가 카테고리 파악 가능
-            */
             const userTypes = [...new Set(cosmetics.map(c => c.cos_type))];
             let candidatesText = "없음";
             if (userTypes.length > 0) {
@@ -194,7 +185,6 @@ router.get('/', requireLogin, async (req, res, next) => {
                 );
 
                 if (prevAnalyses.length === 2) {
-                    // 최신 점수와 그 이전 점수의 차이 계산
                     total_score_change = Number((prevAnalyses[0].total_score - prevAnalyses[1].total_score).toFixed(1));
                 }
 
@@ -224,87 +214,61 @@ router.get('/', requireLogin, async (req, res, next) => {
             // DB 저장
             await saveRoutineToDB(user_no, chal_no, routine);
 
-
-            // 조회 및 응답 구성 (source, action_no 포함)
-            // GET /api/routine 라우터 내부의 routineSql 수정
-            const routineSql = `
-                SELECT r.routine_time, r.routine_order, c.cos_name, 
-                    r.description, r.recommend_reason,
-                    IFNULL(uc.source, '추천') AS source,
-                    a.action_no,
-                    CASE WHEN a.action_yn = 'Y' THEN true ELSE false END AS completed
-                FROM challenge_details cd
-                JOIN routines r ON cd.routine_no = r.routine_no
-                LEFT JOIN cosmetics c ON r.cos_no = c.cos_no  -- 🌟 여기를 반드시 LEFT JOIN으로!
-                LEFT JOIN user_cosmetics uc ON uc.user_no = ? AND uc.cos_no = c.cos_no
-                LEFT JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
-                WHERE cd.chal_no = ?
-                ORDER BY r.routine_time, r.routine_order
-            `;
-            const [dbRows] = await conn.query(routineSql, [user_no, user_no, chal_no]);
-
-            const finalGrouped = { morning: [], evening: [], special: [] };
-
-            // GET 라우터의 데이터 정리 로직 수정
-            dbRows.forEach(row => { // 또는 routineRows.forEach
-                if (!finalGrouped[row.routine_time]) return;
-
-                finalGrouped[row.routine_time].push({
-                    order: row.routine_order,
-                    // 🌟 스페셜이면 내용을 이름으로, 아니면 화장품 이름을 출력
-                    name: row.routine_time === 'special'
-                        ? (row.description || "스페셜 관리 가이드")
-                        : (row.cos_name || row.name || "추천 제품"),
-                    source: row.source || (row.routine_time === 'special' ? "정보" : "추천"),
-                    completed: row.completed === 1 || row.completed === true,
-                    action_no: row.action_no,
-                    description: row.description || "",
-                    recommend_reason: row.recommend_reason || ""
-                });
-            });
-
-            const finalRates = await getCumulativeRate(user_no, chal_no);
-            res.json({
-                status: "success",
-                data: { day_count, cumulative_achievement_rate: finalRates.cumulative_rate, routine: finalGrouped }
-            });
-
         } else {
-            // 이미 생성된 기존 루틴 조회
-            const routineSql = `
-                SELECT a.action_no, c.cos_name AS name, r.routine_time, r.routine_order,
-                       r.description, r.recommend_reason,
-                       CASE WHEN a.action_yn = 'Y' THEN true ELSE false END AS completed,
-                       IFNULL(uc.source, '추천') AS source
-                FROM challenge_details cd
-                JOIN routines r ON cd.routine_no = r.routine_no
-                LEFT JOIN cosmetics c ON r.cos_no = c.cos_no
-                LEFT JOIN user_cosmetics uc ON uc.user_no = ? AND uc.cos_no = c.cos_no
-                LEFT JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
-                WHERE cd.chal_no = ?
-                ORDER BY r.routine_time, r.routine_order
-            `;
-            const [routineRows] = await conn.query(routineSql, [user_no, user_no, chal_no]);
-
-            const grouped = { morning: [], evening: [], special: [] };
-            routineRows.forEach(row => {
-                grouped[row.routine_time].push({
-                    order: row.routine_order,
-                    name: row.name || "스페셜 케어",
-                    completed: row.completed,
-                    source: row.source,
-                    action_no: row.action_no,
-                    description: row.description || "",
-                    recommend_reason: row.recommend_reason || null
-                });
-            });
-
-            const rates = await getCumulativeRate(user_no, chal_no);
-            res.json({
-                status: "success",
-                data: { day_count, cumulative_achievement_rate: rates.cumulative_rate, routine: grouped }
-            });
+            // --- [Day 2~7, 9~14] 기존 루틴 불러오기 & 복사 로직 ---
+            if (existingCheck.length === 0) {
+                // 오늘 날짜의 actions(체크박스)가 없으면 기존 루틴을 복사해서 오늘용으로 만듦
+                await conn.query(`
+                    INSERT INTO actions (user_no, detail_no, action_yn, created_at)
+                    SELECT ?, detail_no, 'N', NOW()
+                    FROM challenge_details
+                    WHERE chal_no = ?
+                `, [user_no, chal_no]);
+            }
         }
+
+        // 생성(1일차)이든 복사(2일차)이든, 오늘 날짜의 통합 데이터를 DB에서 꺼내서 응답함
+        const routineSql = `
+            SELECT r.routine_time, r.routine_order, c.cos_name, 
+                r.description, r.recommend_reason,
+                IFNULL(uc.source, '추천') AS source,
+                a.action_no,
+                CASE WHEN a.action_yn = 'Y' THEN true ELSE false END AS completed
+            FROM challenge_details cd
+            JOIN routines r ON cd.routine_no = r.routine_no
+            LEFT JOIN cosmetics c ON r.cos_no = c.cos_no 
+            LEFT JOIN user_cosmetics uc ON uc.user_no = ? AND uc.cos_no = c.cos_no
+            LEFT JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
+            WHERE cd.chal_no = ? AND DATE(a.created_at) = CURDATE()
+            ORDER BY r.routine_time, r.routine_order
+        `;
+        const [dbRows] = await conn.query(routineSql, [user_no, user_no, chal_no]);
+
+        const finalGrouped = { morning: [], evening: [], special: [] };
+
+        dbRows.forEach(row => {
+            if (!finalGrouped[row.routine_time]) return;
+
+            finalGrouped[row.routine_time].push({
+                order: row.routine_order,
+                // 스페셜이면 내용을 이름으로, 아니면 화장품 이름을 출력
+                name: row.routine_time === 'special'
+                    ? (row.description || "스페셜 관리 가이드")
+                    : (row.cos_name || "추천 제품"),
+                source: row.source || (row.routine_time === 'special' ? "정보" : "추천"),
+                completed: row.completed === 1 || row.completed === true,
+                action_no: row.action_no,
+                description: row.description || "",
+                recommend_reason: row.recommend_reason || ""
+            });
+        });
+
+        const finalRates = await getCumulativeRate(user_no, chal_no);
+        res.json({
+            status: "success",
+            data: { day_count, cumulative_achievement_rate: finalRates.cumulative_rate, routine: finalGrouped }
+        });
+
     } catch (error) {
         next(error);
     }
