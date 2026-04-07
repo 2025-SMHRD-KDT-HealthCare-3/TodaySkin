@@ -9,7 +9,7 @@ import tsLogo from "../assets/TS_Logo.png";
 import Header from "./Header";
 import Footer from "./Footer";
 
-export default function MainBg({ bodyCard, floatingContent, nick }) {
+export default function MainBg({ bodyCard, floatingContent, nick, hideHeader, hideFooter }) {
     return (
         <div
             style={{
@@ -93,9 +93,11 @@ export default function MainBg({ bodyCard, floatingContent, nick }) {
                 }} />
 
                 {/* 헤더 — 스크롤 밖, 상단 고정 */}
-                <div style={{ position: "relative", zIndex: 2, flexShrink: 0 }}>
-                    <Header nick={nick} />
-                </div>
+                {!hideHeader && (
+                    <div style={{ position: "relative", zIndex: 2, flexShrink: 0 }}>
+                        <Header nick={nick} />
+                    </div>
+                )}
 
                 {/* 스크롤 영역 */}
                 <div style={{ flex: 1, overflowY: "auto", paddingBottom: 60, position: "relative", zIndex: 1 }}>
@@ -106,7 +108,7 @@ export default function MainBg({ bodyCard, floatingContent, nick }) {
                 {floatingContent}
 
                 {/* 하단 탭 네비게이션 */}
-                <Footer />
+                {!hideFooter && <Footer />}
             </div>
         </div>
     );

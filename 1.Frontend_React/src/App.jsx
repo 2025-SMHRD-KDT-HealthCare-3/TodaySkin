@@ -29,13 +29,24 @@ function ProtectedRoute({ children, isLoggedIn }) {
 export default function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem("user"));
     const location = useLocation();
+    
+    // 분석 로딩 화면일 때 전체 숨기기 (헤더, 홈 아이콘, 챗봇 아이콘)
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-        const stored = localStorage.getItem("user");
+    //  헤더 숨김 : 회원가입, /(메인)은 로그인 안 됐을 때(로그인 페이지), 분석로딩
+    const hideHeader = ["/chatbot", "/join"].includes(location.pathname) 
+        || (location.pathname === "/" && !isLoggedIn)
+        || isAnalyzing;
+
+
+    const stored = localStorage.getItem("user");
     const nickname = stored ? JSON.parse(stored).nick : "";
 
     return (
         <MainBg 
         nick={nickname}
+        hideHeader={hideHeader}
+        hideFooter={isAnalyzing}
         bodyCard={
                 <Routes>
                     <Route path="/" element={
@@ -50,7 +61,9 @@ export default function App() {
                         <ProtectedRoute isLoggedIn={isLoggedIn}><ProfileEdit /></ProtectedRoute>
                     } />
                     <Route path="/analyze" element={
-                        <ProtectedRoute isLoggedIn={isLoggedIn}><ImgUpload /></ProtectedRoute>
+                        <ProtectedRoute isLoggedIn={isLoggedIn}>
+                            <ImgUpload onLoadingChange={setIsAnalyzing} />
+                        </ProtectedRoute>
                     } />
                     <Route path="/report" element={
                         <ProtectedRoute isLoggedIn={isLoggedIn}><SkinReport /></ProtectedRoute>
@@ -67,7 +80,7 @@ export default function App() {
                 </Routes>
         }
         floatingContent={
-            isLoggedIn && location.pathname !== "/chatbot" && <ChatFloat />
+            !isAnalyzing && isLoggedIn && location.pathname !== "/chatbot" && <ChatFloat />
         }
         />
     );
