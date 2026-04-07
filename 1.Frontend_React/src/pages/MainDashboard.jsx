@@ -207,6 +207,18 @@ export default function MainDashboard({ pageCase, challenge, report, routine, se
                                             opacity: item.completed ? 0.6 : 1,
                                         }}>
                                             {item.name}
+                                            {item.description && item.description !== item.name && (
+                                                <span style={{
+                                                    display: "block",
+                                                    fontSize: 11,
+                                                    color: D.textLight,
+                                                    fontWeight: 400,
+                                                    marginTop: 2,
+                                                    textDecoration: "none",
+                                                }}>
+                                                    {item.description}
+                                                </span>
+                                            )}
                                         </span>
 
                                         {/* 보유/추천 태그 */}

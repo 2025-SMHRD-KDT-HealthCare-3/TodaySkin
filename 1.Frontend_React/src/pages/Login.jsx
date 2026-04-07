@@ -10,7 +10,7 @@ import { D } from "../styles/design";
 import CTAButton from "../components/CTAButton";
 import FormInput from "../components/FormInput";
 import LeafIcon from "../assets/Leaf.png";
-import LoginBImg from "../assets/Login_bottom.png";
+// import LoginBImg from "../assets/Login_bottom.png";
 
 export default function Login({ onLoginSuccess }) {
 
@@ -187,7 +187,7 @@ export default function Login({ onLoginSuccess }) {
             </div>
 
             {/* 하단 이미지 */}
-            <div
+            {/* <div
                 style={{
                     marginTop: "auto",
                     height: 160,
@@ -205,7 +205,7 @@ export default function Login({ onLoginSuccess }) {
                         objectFit: "cover",
                     }}
                 />
-            </div>
+            </div> */}
         </div>
     );
 }

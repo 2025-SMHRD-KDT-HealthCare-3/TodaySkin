@@ -124,7 +124,6 @@ export default function ProfileView() {
                 flexDirection: "column",
                 minHeight: "100%",
                 fontFamily: "inherit",
-                // background: "transparent"
             }}
         >
 
