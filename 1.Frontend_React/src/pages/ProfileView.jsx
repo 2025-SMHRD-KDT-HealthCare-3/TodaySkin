@@ -57,6 +57,13 @@ export default function ProfileView() {
         return g;
     };
 
+    /* 로그아웃 — localStorage 삭제 후 로그인 페이지로 이동 */
+    const handleLogout = () => {
+        localStorage.removeItem("user");
+        navigate("/");
+        window.location.reload();
+    };
+
     /*
      * 회원탈퇴 핸들러
      - 비밀번호 확인 후 DELETE /api/users/my 호출
@@ -117,6 +124,7 @@ export default function ProfileView() {
                 flexDirection: "column",
                 minHeight: "100%",
                 fontFamily: "inherit",
+                // background: "transparent"
             }}
         >
 
@@ -125,7 +133,8 @@ export default function ProfileView() {
                 style={{
                     textAlign: "center",
                     padding: "36px 20px 28px",
-                    background: `linear-gradient(180deg, ${D.bgSub}40 0%, ${D.bgMain} 100%)`,
+                    // background: `linear-gradient(180deg, ${D.bgSub}40 0%, ${D.bgMain} 100%)`,
+                    background: "transparent"
                 }}
             >
                 <div
@@ -322,6 +331,23 @@ export default function ProfileView() {
                 >
                     회원정보수정
                 </CTAButton>
+
+                <button
+                    onClick={handleLogout}
+                    style={{
+                        background: "none",
+                        border: "none",
+                        color: D.textLight,
+                        fontSize: 13,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        padding: "5px 0",
+                        width: "100%",
+                        textAlign: "center",
+                    }}
+                >
+                    로그아웃
+                </button>
 
                 {/* 회원탈퇴 링크 */}
                 <div
