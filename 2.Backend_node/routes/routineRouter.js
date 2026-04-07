@@ -194,6 +194,7 @@ router.get('/', requireLogin, async (req, res, next) => {
 
             // FastAPI 호출
             const pythonRes = await axios.post(`${FASTAPI_URL}/api/routine/generate`, {
+                user_no: Number(user_no),
                 skin_type: req.user.skin_type || "지성",
                 acne_score: Number(analysis[0]?.acne_score || 0),
                 pore_score: Number(analysis[0]?.pore_score || 0),
@@ -201,8 +202,6 @@ router.get('/', requireLogin, async (req, res, next) => {
                 week: day_count <= 7 ? 1 : 2,
                 age: Number(req.user.age || 25),
                 gender: req.user.gender || "M",
-                user_cosmetics: userCosmeticsText,
-                cosmetic_candidates: candidatesText,
                 total_score_change: total_score_change,
                 compliance_rate: Number(compliance_rate),
                 fixed_routines: "물 세안"
