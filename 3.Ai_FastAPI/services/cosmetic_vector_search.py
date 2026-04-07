@@ -192,7 +192,7 @@ def search_cosmetic_candidates(
     acne_score: int,
     pore_score: int,
     user_cosmetics: list[dict],
-    top_k: int = 10
+    top_k: int = 50  
 ) -> list[dict]:
     """
     피부 타입과 점수를 기반으로 벡터 DB에서 후보 화장품을 검색합니다.
@@ -236,10 +236,8 @@ def search_cosmetic_candidates(
             return "집중 관리 필요, 특화 트러블 케어 성분 필수"
 
     query = (
-        f"피부 타입: {skin_type}. "
-        f"여드름 상태: {_score_label(acne_score)}. "
-        f"모공 상태: {_score_label(pore_score)}. "
-        f"이 피부에 맞는 성분과 카테고리의 화장품."
+        f"{skin_type} 피부용 { _score_label(acne_score) } { _score_label(pore_score) } "
+        f"클렌징 토너 세럼 수분크림 자외선차단제 추천 제품" 
     )
 
     try:

@@ -48,7 +48,20 @@ _prompt = ChatPromptTemplate.from_template(
    - 아침/저녁 루틴: 각각 최소 2단계, 최대 6단계
    - 스페셜 케어: 최소 1단계, 최대 3단계
 
-4. [스페셜 케어 가이드] 
+4. [부적합 시 교체] 보유 화장품의 성분을 반드시 분석하세요.
+     추천 후보 목록({cosmetic_candidates})에 완벽히 적합한 제품이 없더라도, 
+     반드시 목록 내에 존재하는 제품 중에서만 선택하세요. 
+     절대로 새로운 제품 이름을 창조하거나 기능을 이름으로 쓰지 마세요.
+   - 지성 피부: 미네랄오일, 라놀린, 코코넛오일, 페트롤라툼 등 
+     고유분 성분이 포함된 제품은 반드시 후보 DB에서 교체하세요.
+   - 건성 피부: 살리실산, AHA/BHA 등 각질 제거 성분이 강한 제품은 교체하세요.
+   - 복합성 피부: T존은 지성, U존은 건성 기준으로 판단하세요.
+   - 여드름 점수 40 미만: 살리실산, 티트리, 나이아신아마이드 성분 제품으로 교체하세요.
+   - 모공 점수 40 미만: 나이아신아마이드, 징크 성분 제품으로 교체하세요.
+   - 위 조건에 해당하면 반드시 후보 DB에서 적합한 제품으로 교체하고 
+     recommend_reason에 교체 이유를 성분 기반으로 설명하세요.
+
+5. [스페셜 케어 가이드] 
     - 매일 하는 루틴이 아닌, **일주일에 1~2회만 실행하는 특별 관리 가이드**를 제안하세요.
     - 사용자의 **여드름 점수({acne_score})와 모공 점수({pore_score}) 중 더 낮은(나쁜) 점수를 기록한 항목**을 최우선 케어 대상으로 선정하세요. 점수가 비슷하다면 피부 타입({skin_type})에 가장 시급한 관리를 선택합니다.
     - 특정 제품을 추천하지 말고, **집에서 활용 가능한 도구(스팀 타월, 화장솜, 냉찜질팩 등)나 구체적인 관리 기법**을 활용한 행동 지침을 작성하세요. (예: 스팀 타월을 이용한 모공 이완 후 딥클렌징, 화장솜을 활용한 부분 진정 팩 등)
@@ -104,14 +117,14 @@ def _build_week2_prompt(req) -> str:
 # ========== 루틴 생성 ==========
 
 def generate_routine(req):
-    # ✅ 벡터 검색으로 화장품 자동 조회
+    # 벡터 검색으로 화장품 자동 조회
     user_cosmetics = fetch_user_cosmetics(req.user_no)
     cosmetic_candidates = search_cosmetic_candidates(
         skin_type=req.skin_type,
         acne_score=req.acne_score,
         pore_score=req.pore_score,
         user_cosmetics=user_cosmetics,
-        top_k=10
+        top_k=50
     )
 
     def _format(cosmetics):
@@ -138,8 +151,8 @@ def generate_routine(req):
         "pore_score": req.pore_score,
         "chal_type": req.chal_type,
         "week": req.week,
-        "user_cosmetics": _format(user_cosmetics),         # ✅ 변경
-        "cosmetic_candidates": _format(cosmetic_candidates), # ✅ 변경
+        "user_cosmetics": _format(user_cosmetics),         
+        "cosmetic_candidates": _format(cosmetic_candidates),
         "week2_prompt": week2_prompt,
     })
 

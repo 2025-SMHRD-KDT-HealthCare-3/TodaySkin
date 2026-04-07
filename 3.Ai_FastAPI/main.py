@@ -43,6 +43,7 @@ from middleware.error_handler import (
 app = FastAPI()
 
 
+# 벡터 검색 연결 가이드
 @app.on_event("startup")
 async def startup():
     init_cosmetic_vector_db()
