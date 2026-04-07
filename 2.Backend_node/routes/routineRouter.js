@@ -15,81 +15,45 @@ const { requireLogin } = require('../middleware/auth');
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
 
-// 1. 루틴 저장 헬퍼 
 async function saveRoutineToDB(user_no, chal_no, routineData) {
     const timeSlots = ['morning', 'evening', 'special'];
 
     for (const time of timeSlots) {
         const items = routineData[time] || [];
-        
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             let cos_no = null;
 
-            // 아침/저녁(제품 중심)과 스페셜(행위 중심)의 데이터 처리 흐름 분리
-            if (time !== 'special') {
-               
-                if (item.cos_name) {
-                    const [ownedCos] = await conn.query(
-                        `SELECT c.cos_no FROM user_cosmetics uc 
-                         JOIN cosmetics c ON uc.cos_no = c.cos_no 
-                         WHERE uc.user_no = ? AND c.cos_name = ? LIMIT 1`,
-                        [user_no, item.cos_name]
-                    );
-
-                    if (ownedCos.length > 0) {
-                        cos_no = ownedCos[0].cos_no; 
-                    } else {
-                        const [cosResult] = await conn.query(
-                            "SELECT cos_no FROM cosmetics WHERE cos_name = ? LIMIT 1",
-                            [item.cos_name]
-                        );
-                        if (cosResult.length > 0) cos_no = cosResult[0].cos_no;
-                    }
-                }
-
-                // 아침/저녁 루틴인데 DB에서 화장품을 못 찾았다면 비정상 데이터이므로 스킵
-                if (!cos_no) continue;
-
-                // 보관함(user_cosmetics) 추가 로직
-                const [checkOwned] = await conn.query(
-                    "SELECT source FROM user_cosmetics WHERE user_no = ? AND cos_no = ?",
-                    [user_no, cos_no]
-                );
-                if (checkOwned.length === 0) {
-                    await conn.query(
-                        "INSERT INTO user_cosmetics (user_no, cos_no, source) VALUES (?, ?, '추천')",
-                        [user_no, cos_no]
-                    );
-                }
-
-            } else {
-                // --- 스페셜 루틴: 화장품 매칭 패스 ---
-                // 스페셜 케어는 방법(description)이 없으면 무의미하므로 방어 코드만 추가
-                if (!item.description) continue;
-                
-                // 스페셜은 cos_no를 null로 유지하여 routines 테이블에 삽입됨
+            if (item.cos_name) {
+                const [cosResult] = await conn.query("SELECT cos_no FROM cosmetics WHERE cos_name = ? LIMIT 1", [item.cos_name]);
+                if (cosResult.length > 0) cos_no = cosResult[0].cos_no;
             }
 
-            // --- 공통 DB 저장 로직 (routines -> challenge_details -> actions) ---
-            const order = i + 1;
+            // 🌟 [개선] DB에 없는 제품(cos_no null)이라도 description이 있으면 일단 저장 (루틴 개수 유지)
+            if (time !== 'special' && !cos_no && !item.cos_name) continue;
+            if (time === 'special' && !item.description) continue;
 
+            if (cos_no) {
+                const isWaterWash = (cos_no === 2486 || item.cos_name === '물 세안');
+                const [checkOwned] = await conn.query("SELECT source FROM user_cosmetics WHERE user_no = ? AND cos_no = ?", [user_no, cos_no]);
+
+                if (checkOwned.length === 0) {
+                    await conn.query("INSERT INTO user_cosmetics (user_no, cos_no, source) VALUES (?, ?, ?)",
+                        [user_no, cos_no, isWaterWash ? '보유' : '추천']);
+                } else if (isWaterWash && checkOwned[0].source === '추천') {
+                    // 🌟 이미 추천으로 되어있어도 물 세안이면 보유로 강제 업데이트
+                    await conn.query("UPDATE user_cosmetics SET source = '보유' WHERE user_no = ? AND cos_no = ?", [user_no, cos_no]);
+                }
+            }
+
+            const order = i + 1;
             const [routineRes] = await conn.query(
                 "INSERT INTO routines (user_no, cos_no, routine_time, routine_order, description, recommend_reason) VALUES (?, ?, ?, ?, ?, ?)",
                 [user_no, cos_no, time, order, item.description || null, item.recommend_reason || null]
             );
 
-            const routine_no = routineRes.insertId;
-
-            const [detailRes] = await conn.query(
-                "INSERT INTO challenge_details (chal_no, routine_no) VALUES (?, ?)",
-                [chal_no, routine_no]
-            );
-            
-            await conn.query(
-                "INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', NOW())",
-                [user_no, detailRes.insertId]
-            );
+            const [detailRes] = await conn.query("INSERT INTO challenge_details (chal_no, routine_no) VALUES (?, ?)", [chal_no, routineRes.insertId]);
+            await conn.query("INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', NOW())", [user_no, detailRes.insertId]);
         }
     }
 }
@@ -114,7 +78,7 @@ async function getCumulativeRate(user_no, chal_no) {
     const total = Number(results[0].total_count) || 0;
     const done = Number(results[0].done_count) || 0;
 
-  
+
     const calculated_rate = total > 0 ? Math.round((done / total) * 100) : 0;
 
     return {
@@ -178,7 +142,7 @@ router.get('/', requireLogin, async (req, res, next) => {
                 `SELECT c.cos_name, c.cos_type, c.cos_ingredient 
                     FROM user_cosmetics uc 
                     JOIN cosmetics c ON uc.cos_no = c.cos_no 
-                    WHERE uc.user_no = ? AND uc.source = '보유'`,  
+                    WHERE uc.user_no = ? AND uc.source = '보유'`,
                 [user_no]
             );
             const userCosmeticsText = cosmetics.map(c => `${c.cos_name}(${c.cos_type})`).join(", ") || "없음";
@@ -251,7 +215,7 @@ router.get('/', requireLogin, async (req, res, next) => {
                 cosmetic_candidates: candidatesText,
                 total_score_change: total_score_change,
                 compliance_rate: Number(compliance_rate),
-                fixed_routines: "물 세안" 
+                fixed_routines: "물 세안"
             }, { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 60000 });
 
             const routine = pythonRes.data.data.routine;
@@ -260,21 +224,6 @@ router.get('/', requireLogin, async (req, res, next) => {
             // DB 저장
             await saveRoutineToDB(user_no, chal_no, routine);
 
-            // 물 세안 고정 추가 (cos_no: 2486)
-            for (const time of ['morning']) {
-                const [waterRoutineRes] = await conn.query(
-                    "INSERT INTO routines (user_no, cos_no, routine_time, routine_order) VALUES (?, 2486, ?, 1)",
-                    [user_no, time]
-                );
-                const [waterDetailRes] = await conn.query(
-                    "INSERT INTO challenge_details (chal_no, routine_no) VALUES (?, ?)",
-                    [chal_no, waterRoutineRes.insertId]
-                );
-                await conn.query(
-                    "INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', NOW())",
-                    [user_no, waterDetailRes.insertId]
-                );
-            }
 
             // 조회 및 응답 구성 (source, action_no 포함)
             // GET /api/routine 라우터 내부의 routineSql 수정
@@ -295,20 +244,22 @@ router.get('/', requireLogin, async (req, res, next) => {
             const [dbRows] = await conn.query(routineSql, [user_no, user_no, chal_no]);
 
             const finalGrouped = { morning: [], evening: [], special: [] };
-           
-            dbRows.forEach(row => {
-                const aiItem = routine[row.routine_time]?.find(item =>
-                    (item.cos_name === row.cos_name) && (item.order === row.routine_order)
-                );
+
+            // GET 라우터의 데이터 정리 로직 수정
+            dbRows.forEach(row => { // 또는 routineRows.forEach
+                if (!finalGrouped[row.routine_time]) return;
 
                 finalGrouped[row.routine_time].push({
                     order: row.routine_order,
-                    name: row.cos_name || "스페셜 케어", 
-                    source: row.source,
-                    completed: row.completed,
+                    // 🌟 스페셜이면 내용을 이름으로, 아니면 화장품 이름을 출력
+                    name: row.routine_time === 'special'
+                        ? (row.description || "스페셜 관리 가이드")
+                        : (row.cos_name || row.name || "추천 제품"),
+                    source: row.source || (row.routine_time === 'special' ? "정보" : "추천"),
+                    completed: row.completed === 1 || row.completed === true,
                     action_no: row.action_no,
-                    description: row.description || aiItem?.description || "", 
-                    recommend_reason: row.recommend_reason || aiItem?.recommend_reason || null
+                    description: row.description || "",
+                    recommend_reason: row.recommend_reason || ""
                 });
             });
 
@@ -343,8 +294,8 @@ router.get('/', requireLogin, async (req, res, next) => {
                     completed: row.completed,
                     source: row.source,
                     action_no: row.action_no,
-                    description: row.description || "", 
-                    recommend_reason: row.recommend_reason || null 
+                    description: row.description || "",
+                    recommend_reason: row.recommend_reason || null
                 });
             });
 
