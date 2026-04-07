@@ -1,13 +1,15 @@
 /*
  * skinRouter — 피부 이미지 분석 라우터
- *
- * 역할:
- * - 업로드된 피부 이미지를 DB에 기록
- * - FastAPI로 분석 요청
- * - 분석 결과 이미지를 파일로 저장
- * - DB(img_analyses, daily_reports)에 결과 저장
- * - 최신 결과 / 히스토리 조회 API 제공
- */
+  - 업로드된 피부 이미지를 DB에 기록
+  - FastAPI로 분석 요청
+  - 분석 결과 이미지를 파일로 저장
+  - DB(img_analyses, daily_reports)에 결과 저장
+  - 최신 결과 / 히스토리 조회 API 제공
+
+  - POST /api/skin/analyze    이미지 업로드 + AI 분석 (재분석 시 기존 데이터 교체)
+  - GET  /api/skin/result     최신 분석 결과 조회 (1건)
+  - GET  /api/skin/history    분석 기록 목록 조회 (날짜별)
+*/
 
 const express = require('express');
 const router = express.Router();

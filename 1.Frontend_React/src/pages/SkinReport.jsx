@@ -6,16 +6,17 @@
 */
 
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { D } from "../styles/design";
-import Header from "../components/Header";
 import CTAButton from "../components/CTAButton";
 import Spinner from "../components/Spinner";
 
 export default function SkinReport() {
     const navigate = useNavigate();
-    const stored = localStorage.getItem("user");
-    const nickname = stored ? JSON.parse(stored).nick : "";
+    const [searchParams] = useSearchParams();
+
+    // 루틴 다시 시작하기 버튼 — paramChalNo일 때 숨기기
+    const paramChalNo = searchParams.get("chal_no");
 
     const [loading, setLoading] = useState(true);
     const [challenge, setChallenge] = useState(null);
@@ -25,42 +26,57 @@ export default function SkinReport() {
     useEffect(() => {
         const load = async () => {
             try {
-                /* 1) 현재 챌린지 조회 */
-                const chalRes = await fetch("/api/challenge", { credentials: "include" });
-                const chalJson = await chalRes.json();
+                const paramChalNo = searchParams.get("chal_no");
 
-                if (chalJson.status !== "success" || !chalJson.data) {
-                    setLoading(false);
-                    return;
+                let chalNo = null;
+                let chalData = null;    // ← 로컬 변수 추가
+
+                if (paramChalNo) {
+                    chalNo = paramChalNo;
+                    chalData = { chal_no: Number(paramChalNo) };
+                    setChallenge(chalData);
+                } else {
+                    const chalRes = await fetch("/api/challenge", { credentials: "include" });
+                    const chalJson = await chalRes.json();
+
+                    if (chalJson.status !== "success" || !chalJson.data) {
+                        setLoading(false);
+                        return;
+                    }
+                    chalNo = chalJson.data.chal_no;
+                    chalData = chalJson.data;    // ← 로컬 변수에도 저장
+                    setChallenge(chalData);
                 }
 
-                const chalData = chalJson.data;
-                setChallenge(chalData);
-
-                /* 2) 피부 변화 리포트 + 달성률 */
                 const [reportRes, historyRes] = await Promise.allSettled([
-                    fetch(`/api/reports/challenge/${chalData.chal_no}`, { credentials: "include" }),
+                    fetch(`/api/reports/challenge/${chalNo}`, { credentials: "include" }),
                     fetch("/api/skin/history", { credentials: "include" }),
                 ]);
 
+                /* reportRes — 로컬 변수로 받기 */
+                let rData = null;
                 if (reportRes.status === "fulfilled" && reportRes.value.ok) {
                     const reportJson = await reportRes.value.json();
                     if (reportJson.status === "success") {
-                        setReportData(reportJson.data);
+                        rData = reportJson.data;
+                        setReportData(rData);
                     }
                 }
 
-                /* 3) 점수 히스토리 — 챌린지 기간만 필터 */
+                /* historyRes — rData와 chalData에서 날짜 가져오기 */
                 if (historyRes.status === "fulfilled" && historyRes.value.ok) {
                     const historyJson = await historyRes.value.json();
                     if (historyJson.status === "success") {
-                        const sd = new Date(chalData.start_date);
+                        const sd = new Date(rData?.start_date || chalData?.start_date);
                         const startDate = `${sd.getFullYear()}-${String(sd.getMonth() + 1).padStart(2, "0")}-${String(sd.getDate()).padStart(2, "0")}`;
+
+                        const ed = new Date(rData?.end_date || chalData?.end_date);
+                        const endDate = `${ed.getFullYear()}-${String(ed.getMonth() + 1).padStart(2, "0")}-${String(ed.getDate()).padStart(2, "0")}`;
+
                         const filtered = historyJson.data.filter(
-                            (item) => item.date?.slice(0, 10) >= startDate
+                            (item) => item.date?.slice(0, 10) >= startDate && item.date?.slice(0, 10) <= endDate
                         );
 
-                        /* 날짜별 최신 1건만 (history는 DESC 정렬이라 첫 번째가 최신) */
                         const uniqueByDate = [];
                         const seen = new Set();
                         filtered.forEach((item) => {
@@ -203,7 +219,6 @@ export default function SkinReport() {
     if (loading) {
         return (
             <div style={{ display: "flex", flexDirection: "column", minHeight: "100%", fontFamily: "inherit" }}>
-                <Header nick={nickname} />
                 <div style={{ flex: 1 }}>
                     <Spinner message="리포트를 준비하고 있어요" />
                 </div>
@@ -214,7 +229,6 @@ export default function SkinReport() {
     if (!challenge) {
         return (
             <div style={{ display: "flex", flexDirection: "column", minHeight: "100%", fontFamily: "inherit" }}>
-                <Header nick={nickname} />
                 <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
                     <p style={{ color: D.textLight, fontSize: 14 }}>진행 중인 챌린지가 없습니다</p>
                     <CTAButton onClick={() => navigate("/")} style={{ width: "auto", padding: "12px 32px" }}>
@@ -227,7 +241,6 @@ export default function SkinReport() {
 
     return (
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100%", fontFamily: "inherit" }}>
-            <Header nick={nickname} />
 
             <div style={{ padding: "24px 15px" }}>
 
@@ -245,24 +258,48 @@ export default function SkinReport() {
                     <button onClick={() => navigate("/challenge")} style={{
                         background: "none", border: "none", cursor: "pointer", padding: 6, marginTop: 2,
                     }}>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={D.textLight} strokeWidth="1.5">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                            <polyline points="14 2 14 8 20 8" />
-                            <line x1="16" y1="13" x2="8" y2="13" />
-                            <line x1="16" y1="17" x2="8" y2="17" />
-                            <polyline points="10 9 9 9 8 9" />
-                        </svg>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={D.textLight} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="4" />
+                                <path d="M8 16v-5" />
+                                <path d="M12 16v-8" />
+                                <path d="M16 16v-3" />
+                            </svg>
+                            <span style={{ fontSize: 10, color: D.textLight, fontWeight: 500 }}>지난 기록</span>
+                        </div>
                     </button>
                 </div>
 
                 {/* 피부진단점수 차트 */}
-                {renderChart(scoreHistory, "total_score", "피부진단점수", D.cta)}
+                {scoreHistory.length > 0
+                    ? renderChart(scoreHistory, "total_score", "평균 피부진단점수", D.cta)
+                    : (
+                        <div style={{
+                            background: D.white, borderRadius: 14, border: `1px solid ${D.border}`,
+                            padding: "40px 18px", marginBottom: 16, textAlign: "center",
+                        }}>
+                            <p style={{ fontSize: 14, fontWeight: 700, color: D.title, marginBottom: 6 }}>피부진단점수</p>
+                            <p style={{ fontSize: 13, color: D.textLight }}>해당 데이터가 없습니다</p>
+                        </div>
+                    )
+                }
 
                 {/* 달성률 차트 */}
-                {reportData?.daily_rates && renderChart(reportData.daily_rates, "rate", "루틴달성률", D.positive)}
+                {reportData?.daily_rates?.length > 0
+                    ? renderChart(reportData.daily_rates, "rate", "평균 루틴달성률", D.positive)
+                    : (
+                        <div style={{
+                            background: D.white, borderRadius: 14, border: `1px solid ${D.border}`,
+                            padding: "40px 18px", marginBottom: 16, textAlign: "center",
+                        }}>
+                            <p style={{ fontSize: 14, fontWeight: 700, color: D.title, marginBottom: 6 }}>루틴달성률</p>
+                            <p style={{ fontSize: 13, color: D.textLight }}>해당 데이터가 없습니다</p>
+                        </div>
+                    )
+                }
 
                 {/* 이미지 비교 */}
-                {reportData && (reportData.first_day?.image_url || reportData.latest_day?.image_url) && (
+                {(
                     <div style={{
                         background: D.white, borderRadius: 14,
                         border: `1px solid ${D.border}`, padding: "20px 18px", marginBottom: 16,
@@ -274,64 +311,88 @@ export default function SkinReport() {
                             두 시점의 피부 사진을 비교해보세요
                         </p>
 
-                        <div style={{ display: "flex", gap: 12 }}>
-                            {/* 첫날 */}
-                            <div style={{ flex: 1 }}>
-                                <p style={{ fontSize: 12, color: D.textLight, textAlign: "center", marginBottom: 8 }}>이전</p>
-                                {reportData.first_day?.image_url ? (
-                                    <div style={{ position: "relative", borderRadius: 12, overflow: "hidden" }}>
-                                        <img src={reportData.first_day.image_url} alt="첫날"
-                                            style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover", display: "block" }} />
-                                        <div style={{
-                                            position: "absolute", bottom: 0, left: 0, right: 0,
-                                            padding: "8px 10px", background: "rgba(0,0,0,0.5)",
-                                            color: D.white, fontSize: 11,
-                                        }}>
-                                            <div>{dotDate(reportData.first_day.created_at)}</div>
-                                            <div>점수: {reportData.first_day.total_score}</div>
+                        {reportData?.first_day?.image_url || reportData?.latest_day?.image_url ? (
+                            <div style={{ display: "flex", gap: 12 }}>
+                                {/* 첫날 */}
+                                <div style={{ flex: 1 }}>
+                                    <p style={{ fontSize: 12, color: D.textLight, textAlign: "center", marginBottom: 8 }}>이전</p>
+                                    {reportData.first_day?.image_url ? (
+                                        <div style={{ position: "relative", borderRadius: 12, overflow: "hidden" }}>
+                                            <img src={reportData.first_day.image_url} alt="첫날"
+                                                style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover", display: "block" }} />
+                                            <div style={{
+                                                position: "absolute", bottom: 0, left: 0, right: 0,
+                                                padding: "8px 10px", background: "rgba(0,0,0,0.5)",
+                                                color: D.white, fontSize: 11,
+                                            }}>
+                                                <div>{dotDate(reportData.first_day.created_at)}</div>
+                                                <div>점수: {Math.round(reportData.first_day.total_score)}</div>
+                                            </div>
                                         </div>
-                                    </div>
-                                ) : (
-                                    <div style={{
-                                        aspectRatio: "3/4", borderRadius: 12, background: D.bgSub,
-                                        display: "flex", alignItems: "center", justifyContent: "center",
-                                        fontSize: 13, color: D.textLight,
-                                    }}>사진 없음</div>
-                                )}
-                            </div>
+                                    ) : (
+                                        <div style={{
+                                            aspectRatio: "3/4", borderRadius: 12, background: D.bgSub,
+                                            display: "flex", alignItems: "center", justifyContent: "center",
+                                            fontSize: 13, color: D.textLight,
+                                        }}>사진 없음</div>
+                                    )}
+                                </div>
 
-                            {/* 최신 */}
-                            <div style={{ flex: 1 }}>
-                                <p style={{ fontSize: 12, color: D.textLight, textAlign: "center", marginBottom: 8 }}>현재</p>
-                                {reportData.latest_day?.image_url ? (
-                                    <div style={{ position: "relative", borderRadius: 12, overflow: "hidden" }}>
-                                        <img src={reportData.latest_day.image_url} alt="최신"
-                                            style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover", display: "block" }} />
-                                        <div style={{
-                                            position: "absolute", bottom: 0, left: 0, right: 0,
-                                            padding: "8px 10px", background: "rgba(0,0,0,0.5)",
-                                            color: D.white, fontSize: 11,
-                                        }}>
-                                            <div>{dotDate(reportData.latest_day.created_at)}</div>
-                                            <div>점수: {reportData.latest_day.total_score}</div>
+                                {/* 최신 */}
+                                <div style={{ flex: 1 }}>
+                                    <p style={{ fontSize: 12, color: D.textLight, textAlign: "center", marginBottom: 8 }}>현재</p>
+                                    {reportData.latest_day?.image_url ? (
+                                        <div style={{ position: "relative", borderRadius: 12, overflow: "hidden" }}>
+                                            <img src={reportData.latest_day.image_url} alt="최신"
+                                                style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover", display: "block" }} />
+                                            <div style={{
+                                                position: "absolute", bottom: 0, left: 0, right: 0,
+                                                padding: "8px 10px", background: "rgba(0,0,0,0.5)",
+                                                color: D.white, fontSize: 11,
+                                            }}>
+                                                <div>{dotDate(reportData.latest_day.created_at)}</div>
+                                                <div>점수: {Math.round(reportData.latest_day.total_score)}</div>
+                                            </div>
                                         </div>
-                                    </div>
-                                ) : (
-                                    <div style={{
-                                        aspectRatio: "3/4", borderRadius: 12, background: D.bgSub,
-                                        display: "flex", alignItems: "center", justifyContent: "center",
-                                        fontSize: 13, color: D.textLight,
-                                    }}>사진 없음</div>
-                                )}
+                                    ) : (
+                                        <div style={{
+                                            aspectRatio: "3/4", borderRadius: 12, background: D.bgSub,
+                                            display: "flex", alignItems: "center", justifyContent: "center",
+                                            fontSize: 13, color: D.textLight,
+                                        }}>사진 없음</div>
+                                    )}
+                                </div>
                             </div>
-                        </div>
+                        ) : (
+                            <p style={{ fontSize: 13, color: D.textLight, textAlign: "center", padding: "20px 0" }}>
+                                해당 데이터가 없습니다
+                            </p>
+                        )}
                     </div>
                 )}
 
                 {/* 루틴 다시 시작하기 */}
-                <CTAButton onClick={() => navigate("/")}>
-                    루틴 다시 시작하기
-                </CTAButton>
+                {!paramChalNo && (
+                    <CTAButton onClick={async () => {
+                        if (!window.confirm("현재 챌린지를 종료하고 새로 시작할까요?")) return;
+                        try {
+                            const res = await fetch("/api/challenge/stop", {
+                                method: "PATCH",
+                                credentials: "include",
+                            });
+                            const result = await res.json();
+                            if (result.status === "success") {
+                                navigate("/");
+                            } else {
+                                alert("챌린지 종료에 실패했습니다.");
+                            }
+                        } catch (e) {
+                            alert("서버 연결에 실패했습니다.");
+                        }
+                    }}>
+                        루틴 다시 시작하기
+                    </CTAButton>
+                )}
             </div>
         </div>
     );

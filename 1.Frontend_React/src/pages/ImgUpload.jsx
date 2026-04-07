@@ -17,7 +17,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { D } from "../styles/design";
-import Header from "../components/Header";
 import CTAButton from "../components/CTAButton";
 import Loading from "../components/Loading";
 
@@ -35,8 +34,6 @@ export default function ImgUpload() {
     const videoRef = useRef(null);
     const streamRef = useRef(null);
 
-    const stored = localStorage.getItem("user");
-    const nick = stored ? JSON.parse(stored).nick : "";
 
     /* API 응답 + 애니메이션 완료를 모두 기다린 후 이동 */
     const analysisResultRef = useRef(null);
@@ -173,9 +170,6 @@ export default function ImgUpload() {
 
             {/* 로딩 오버레이 — 분석 중일 때 전체 화면 덮음 */}
             {isLoading && <Loading onDone={handleLoadingDone} />}
-
-            {/* 헤더 — 닉네임 표시 + 햄버거 메뉴 */}
-            <Header nick={nick} />
 
             <div style={{ padding: "24px 15px" }}>
 

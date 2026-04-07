@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import MainBg from "./components/MainBg";
+import ChatFloat from "./components/ChatFloat";
 
 import Login from "./pages/Login";
 import Join from "./pages/Join";
@@ -27,41 +28,51 @@ function ProtectedRoute({ children, isLoggedIn }) {
 
 export default function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem("user"));
+    const location = useLocation();
+
+        const stored = localStorage.getItem("user");
+    const nickname = stored ? JSON.parse(stored).nick : "";
 
     return (
-        <MainBg bodyCard={
-            <Routes>
-                <Route path="/" element={
-                    isLoggedIn ? <Main /> : <Login onLoginSuccess={() => setIsLoggedIn(true)} />
+        <MainBg 
+        nick={nickname}
+        bodyCard={
+                <Routes>
+                    <Route path="/" element={
+                        isLoggedIn ? <Main /> : <Login onLoginSuccess={() => setIsLoggedIn(true)} />
                     } />
-                <Route path="/join" element={<Join />} />
+                    <Route path="/join" element={<Join />} />
 
-                <Route path="/profile" element={
-                    <ProtectedRoute isLoggedIn={isLoggedIn}><ProfileView /></ProtectedRoute>
-                } />
-                <Route path="/profile/edit" element={
-                    <ProtectedRoute isLoggedIn={isLoggedIn}><ProfileEdit /></ProtectedRoute>
-                } />
-                <Route path="/analyze" element={
-                    <ProtectedRoute isLoggedIn={isLoggedIn}><ImgUpload /></ProtectedRoute>
-                } />
-                <Route path="/report" element={
-                    <ProtectedRoute isLoggedIn={isLoggedIn}><SkinReport /></ProtectedRoute>
-                } />
-                <Route path="/challenge" element={
-                    <ProtectedRoute isLoggedIn={isLoggedIn}><ChalHistory /></ProtectedRoute>
-                } />
-                <Route path="/chatbot" element={
-                    <ProtectedRoute isLoggedIn={isLoggedIn}><Chatbot /></ProtectedRoute>
-                } />
-                <Route path="/cosmetics" element={
-                    <ProtectedRoute isLoggedIn={isLoggedIn}><CosManage /></ProtectedRoute>
-                } />
-            </Routes>
-        }>
-        </MainBg>
+                    <Route path="/profile" element={
+                        <ProtectedRoute isLoggedIn={isLoggedIn}><ProfileView /></ProtectedRoute>
+                    } />
+                    <Route path="/profile/edit" element={
+                        <ProtectedRoute isLoggedIn={isLoggedIn}><ProfileEdit /></ProtectedRoute>
+                    } />
+                    <Route path="/analyze" element={
+                        <ProtectedRoute isLoggedIn={isLoggedIn}><ImgUpload /></ProtectedRoute>
+                    } />
+                    <Route path="/report" element={
+                        <ProtectedRoute isLoggedIn={isLoggedIn}><SkinReport /></ProtectedRoute>
+                    } />
+                    <Route path="/challenge" element={
+                        <ProtectedRoute isLoggedIn={isLoggedIn}><ChalHistory /></ProtectedRoute>
+                    } />
+                    <Route path="/chatbot" element={
+                        <ProtectedRoute isLoggedIn={isLoggedIn}><Chatbot /></ProtectedRoute>
+                    } />
+                    <Route path="/cosmetics" element={
+                        <ProtectedRoute isLoggedIn={isLoggedIn}><CosManage /></ProtectedRoute>
+                    } />
+                </Routes>
+        }
+        floatingContent={
+            isLoggedIn && location.pathname !== "/chatbot" && <ChatFloat />
+        }
+        />
     );
 }
+
 
 
 /*
