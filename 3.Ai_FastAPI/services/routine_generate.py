@@ -13,6 +13,7 @@ import logging
 
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from services.cosmetic_vector_search import search_cosmetic_candidates, fetch_user_cosmetics
 
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ _prompt = ChatPromptTemplate.from_template(
 
 3. [단계 수 조절] 
    - 피부 상태에 따라 꼭 필요한 단계만 구성하며, 불필요하면 억지로 채우지 마세요.
-   - 아침/저녁 루틴: 각각 최소 1단계, 최대 6단계
+   - 아침/저녁 루틴: 각각 최소 2단계, 최대 6단계
    - 스페셜 케어: 최소 1단계, 최대 3단계
 
 4. [스페셜 케어 가이드] 
@@ -103,13 +104,31 @@ def _build_week2_prompt(req) -> str:
 # ========== 루틴 생성 ==========
 
 def generate_routine(req):
+    # ✅ 벡터 검색으로 화장품 자동 조회
+    user_cosmetics = fetch_user_cosmetics(req.user_no)
+    cosmetic_candidates = search_cosmetic_candidates(
+        skin_type=req.skin_type,
+        acne_score=req.acne_score,
+        pore_score=req.pore_score,
+        user_cosmetics=user_cosmetics,
+        top_k=10
+    )
+
+    def _format(cosmetics):
+        if not cosmetics:
+            return "없음"
+        return "\n".join(
+            f"- {c['cos_name']} / {c['cos_brand']} / {c['cos_type']} / {c['cos_ingredient']}"
+            for c in cosmetics
+        )
+
+    week2_prompt = _build_week2_prompt(req)
     """
     스킨케어 루틴 생성
     - req: 요청 객체 (age, gender, skin_type, 점수, 챌린지 정보, 화장품 목록 포함)
     - 14일 챌린지 2주차(8일차)에는 1주차 결과 반영하여 재설계
     - 에러 발생 시 글로벌 핸들러로 전달 (main.py)
     """
-    week2_prompt = _build_week2_prompt(req)
 
     result = _chain.invoke({
         "age": req.age or "정보 없음",
@@ -119,8 +138,8 @@ def generate_routine(req):
         "pore_score": req.pore_score,
         "chal_type": req.chal_type,
         "week": req.week,
-        "user_cosmetics": req.user_cosmetics or "없음",
-        "cosmetic_candidates": req.cosmetic_candidates or "없음",
+        "user_cosmetics": _format(user_cosmetics),         # ✅ 변경
+        "cosmetic_candidates": _format(cosmetic_candidates), # ✅ 변경
         "week2_prompt": week2_prompt,
     })
 

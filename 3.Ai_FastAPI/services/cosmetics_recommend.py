@@ -11,6 +11,7 @@ import logging
 
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from services.cosmetic_vector_search import search_cosmetic_candidates, fetch_user_cosmetics
 
 logger = logging.getLogger(__name__)
 
@@ -90,8 +91,17 @@ def _format_cosmetics_for_ai(cosmetics: list) -> str:
 
 # ========== 화장품 추천 ==========
 def recommend_cosmetics(req):
-    candidate_types = set(c["cos_type"] for c in (req.cosmetic_candidates or []))
-    owned = set(req.owned_categories or [])
+    user_cosmetics = fetch_user_cosmetics(req.user_no)
+    cosmetic_candidates = search_cosmetic_candidates(
+        skin_type=req.skin_type,
+        acne_score=req.acne_score,
+        pore_score=req.pore_score,
+        user_cosmetics=user_cosmetics,
+        top_k=10
+    )
+
+    candidate_types = set(c["cos_type"] for c in cosmetic_candidates)
+    owned = set(c["cos_type"] for c in user_cosmetics)
     missing_types = candidate_types - owned
 
     if not missing_types and owned:
@@ -103,7 +113,7 @@ def recommend_cosmetics(req):
             }
         }
 
-    candidates_text = _format_cosmetics_for_ai(req.cosmetic_candidates)
+    candidates_text = _format_cosmetics_for_ai(cosmetic_candidates)
 
     result = _chain.invoke({
         "age": req.age or "정보 없음",                                                          # ✅ 추가
