@@ -19,61 +19,49 @@ logger = logging.getLogger(__name__)
 _llm = ChatOpenAI(model="gpt-5.4-mini", max_tokens=200)
 
 
+
+
 # ========== 프롬프트 템플릿 ==========
 _prompt = ChatPromptTemplate.from_template(
     """당신은 피부 관리 어드바이저입니다.
-사용자의 피부 점수 변화를 보고 한줄 코멘트를 작성합니다.
+사용자의 현재 여드름과 모공 점수를 분석하여 전문적인 한줄 코멘트를 작성합니다.
 
-[사용자 피부 정보]
+[점수 가이드]
+- 80점 이상: 매우 좋음 (칭찬)
+- 60~79점: 양호 (유지 권장)
+- 40~59점: 관리 필요 (주의 및 조언)
+- 40점 미만: 집중 관리 (강한 주의 및 격려)
+
+[분석 정보]
 - 피부 타입: {skin_type}
-- 종합 점수: {total_score}점 (80+ 매우좋음 / 60~79 양호 / 40~59 관리필요 / 40 미만 집중관리)
-- 이전 대비 변화: {total_change}
+- 현재 여드름 점수: {acne_score}점
+- 현재 모공 점수: {pore_score}점
 
-[규칙]
-1. 반드시 1문장으로만 작성하세요.
-2. 점수 변화량(올랐으면 +N점, 내려갔으면 -N점)만 언급하세요.
-   절대 현재 점수 숫자는 쓰지 마세요.
-3. 첫 분석이면 점수 언급 없이 환영 멘트로만 작성하세요.
-4. 변화량 뒤에 공감/감정 멘트를 붙이세요.
-5. 문장 끝에 이모지 1개만 붙이세요.
-6. 다른 텍스트는 절대 포함하지 마세요.
+[작성 규칙]
+1. 반드시 딱 1문장으로만 작성하세요.
+2. 현재 점수 수치(숫자)는 코멘트에 직접 포함하지 마세요. (상태 위주로 설명)
+3. 여드름과 모공 상태 중 더 관리가 시급하거나 특징적인 부분을 강조하세요.
+4. 사용자에게 친절하면서도 전문적인 느낌을 주어야 합니다.
+5. 문장 끝에 상황에 어울리는 이모지 1개를 사용하세요.
+6. 다른 설명 텍스트는 절대 포함하지 마세요.
 """)
-
 
 # ========== 체인 구성 ==========
 _chain = _prompt | _llm
-
 
 # ========== 데일리 코멘트 생성 ==========
 
 def generate_daily_comment(req):
     """
-    데일리 한줄 코멘트 생성
-    - req: 요청 객체 (skin_type, total_score, prev_total_score 포함)
-    - 첫 분석 시 prev_total_score = 0.0으로 들어옴
-    - 에러 발생 시 글로벌 핸들러로 전달 (main.py)
+    오늘의 여드름/모공 점수 기반 한줄 진단 생성
     """
-    # 첫 분석 여부 판별 — prev_total_score가 0.0이면 이전 분석 없음
-    is_first = req.prev_total_score == 0.0
-
-    if is_first:
-        change_text = "첫 분석 (이전 데이터 없음)"
-    else:
-        diff = req.total_score - req.prev_total_score
-        if diff > 0:
-            change_text = f"+{diff:.1f} (개선)"
-        elif diff < 0:
-            change_text = f"{diff:.1f} (악화)"
-        else:
-            change_text = "0 (변화없음)"
-
+    # 이전 데이터 비교 로직을 삭제하고 현재 점수만 전달
     result = _chain.invoke({
         "skin_type": req.skin_type or "정보 없음",
-        "total_score": req.total_score,
-        "total_change": change_text,
+        "acne_score": req.acne_score,
+        "pore_score": req.pore_score,
     })
 
-    # 백엔드가 받아서 DAILY_REPORTS 테이블에 저장
     return {
         "status": "success",
         "data": {

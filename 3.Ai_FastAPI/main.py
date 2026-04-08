@@ -95,7 +95,7 @@ class RoutineRequest(BaseModel):
     age: int = 0
     gender: str = ""
     total_score_change: float = 0.0
-    compliance_rate: int = 0
+   
 
 
 # ---------- 챗봇 요청 ----------
