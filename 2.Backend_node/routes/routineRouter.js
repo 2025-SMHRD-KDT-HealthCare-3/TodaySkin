@@ -16,9 +16,13 @@ const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
 // KST 날짜 헬퍼
 const getKSTDate = () => {
-    const now = new Date();
-    const kst = new Date(now.getTime() + (9 * 60 * 60 * 1000));
-    return kst.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
+
+const getKSTDatetime = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
 };
 
 // 1. 루틴 저장 헬퍼
@@ -66,8 +70,8 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
 
             if (checkSource.length > 0 && checkSource[0].source === '보유') {
                 await conn.query(
-                    "INSERT INTO actions (user_no, detail_no, action_yn, created_at, routine_checked) VALUES (?, ?, 'N', NOW(), CONVERT_TZ(NOW(), '+00:00', '+09:00'))",
-                    [user_no, detailRes.insertId]
+                    "INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', ?)",
+                    [user_no, detailRes.insertId, getKSTDatetime()]
                 );
             }
         }
@@ -87,7 +91,7 @@ async function getCumulativeRate(user_no, chal_no) {
         JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = a.user_no
         WHERE a.user_no = ? 
         AND cd.chal_no = ?
-        AND DATE(a.routine_checked) = ?
+        AND DATE(a.created_at) = ?  
         AND uc.source = '보유'                    
         AND r.routine_time IN ('morning', 'evening') 
     `;
@@ -118,7 +122,7 @@ router.get('/', requireLogin, async (req, res, next) => {
         const [existingCheck] = await conn.query(`
             SELECT a.action_no FROM actions a
             JOIN challenge_details cd ON a.detail_no = cd.detail_no
-            WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.routine_checked) = ?
+            WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.created_at) = ?
             LIMIT 1
         `, [chal_no, user_no, today]);
 
@@ -127,7 +131,7 @@ router.get('/', requireLogin, async (req, res, next) => {
         if (needNewRoutine) {
             // 중복 방지 삭제 후 재생성
             await conn.query(
-                "DELETE a FROM actions a JOIN challenge_details cd ON a.detail_no = cd.detail_no WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.routine_checked) = ?",
+                "DELETE a FROM actions a JOIN challenge_details cd ON a.detail_no = cd.detail_no WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.created_at) = ?",
                 [chal_no, user_no, today]
             );
 
@@ -151,13 +155,13 @@ router.get('/', requireLogin, async (req, res, next) => {
         } else if (existingCheck.length === 0) {
             // Day 2~7, 9~14: 어제 루틴을 오늘 날짜로 복사
             await conn.query(`
-                INSERT INTO actions (user_no, detail_no, action_yn, created_at, routine_checked)
-                SELECT ?, cd.detail_no, 'N', NOW(), CONVERT_TZ(NOW(), '+00:00', '+09:00')
+                INSERT INTO actions (user_no, detail_no, action_yn, created_at)
+                SELECT ?, cd.detail_no, 'N', ?
                 FROM challenge_details cd
                 JOIN routines r ON cd.routine_no = r.routine_no
                 JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = ?
                 WHERE cd.chal_no = ? AND uc.source = '보유'
-            `, [user_no, user_no, chal_no]);
+            `, [user_no, getKSTDatetime(), user_no, chal_no]);
         }
 
         // 최종 응답 데이터 구성
@@ -175,7 +179,7 @@ router.get('/', requireLogin, async (req, res, next) => {
             JOIN routines r ON cd.routine_no = r.routine_no
             LEFT JOIN cosmetics c ON r.cos_no = c.cos_no
             LEFT JOIN user_cosmetics uc ON uc.cos_no = r.cos_no AND uc.user_no = ?
-            LEFT JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ? AND DATE(a.routine_checked) = ?
+            LEFT JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ? AND DATE(a.created_at) = ?
             WHERE cd.chal_no = ?
             ORDER BY r.routine_time, r.routine_order
         `;
@@ -212,9 +216,16 @@ router.patch('/:action_no', requireLogin, async (req, res, next) => {
 
         const [results] = await conn.query("SELECT action_no FROM actions WHERE action_no = ? AND user_no = ?", [action_no, user_no]);
         if (results.length === 0) throw new ValidationError("권한이 없습니다.", 403);
-
+        
         const action_yn = completed ? 'Y' : 'N';
-        await conn.query("UPDATE actions SET action_yn = ? WHERE action_no = ? AND user_no = ?", [action_yn, action_no, user_no]);
+
+        const updateSql = `
+            UPDATE actions 
+            SET action_yn = ?, 
+                routine_checked = CASE WHEN ? = 'Y' THEN NOW() ELSE NULL END 
+            WHERE action_no = ? AND user_no = ?
+        `;
+        await conn.query(updateSql, [action_yn, action_yn, action_no, user_no]);
 
         const [chal] = await conn.query("SELECT chal_no FROM challenges WHERE user_no = ? AND chal_status = '진행중' LIMIT 1", [user_no]);
         const rates = await getCumulativeRate(user_no, chal[0]?.chal_no);

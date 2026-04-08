@@ -21,12 +21,11 @@ router.get('/daily', requireLogin, async (req, res, next) => {
     try {
         const user_no = req.user.user_no;
 
-        // 1. [날짜 보정] 서버가 UTC여도 무조건 한국 날짜 "YYYY-MM-DD" 생성
         const now = new Date();
-        const kstNow = new Date(now.getTime() + (9 * 60 * 60 * 1000));
-        const today = kstNow.toISOString().slice(0, 10);
+        const d = new Date();
+        const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
-        // 2. 진행 중인 챌린지 조회
+        // 진행 중인 챌린지 조회
         const [chalResults] = await conn.query(
             "SELECT chal_no, chal_name, DATEDIFF(NOW(), start_date) + 1 AS day_count FROM challenges WHERE user_no = ? AND chal_status = '진행중' ORDER BY created_at DESC LIMIT 1",
             [user_no]
@@ -48,17 +47,17 @@ router.get('/daily', requireLogin, async (req, res, next) => {
 
         const has_today_analysis = todayResults.length > 0;
 
-        // 4. 하단 그래프용 데이터 (JOIN 제거하여 데이터 누락 원천 차단)
+        // 4. 하단 그래프용 데이터 — created_at 기준 (routineRouter와 동일 전략)
         const [dailyRates] = await conn.query(`
-           SELECT 
-                /* 핵심: 날짜별로 예쁘게 묶기 위해 DATE() 사용 */
-                DATE(routine_checked) AS date, 
-                ROUND(SUM(CASE WHEN action_yn = 'Y' THEN 1 ELSE 0 END) / COUNT(*) * 100) AS rate
-            FROM actions
-            WHERE user_no = ? AND routine_checked IS NOT NULL
-            GROUP BY DATE(routine_checked)  /* 여기도 DATE() 추가 */
+            SELECT
+                DATE(a.created_at) AS date,
+                ROUND(SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) / COUNT(a.action_no) * 100) AS rate
+            FROM actions a
+            JOIN challenge_details cd ON a.detail_no = cd.detail_no
+            WHERE a.user_no = ? AND cd.chal_no = ?
+            GROUP BY DATE(a.created_at)
             ORDER BY date ASC
-        `, [user_no]);
+        `, [user_no, chal_no]);
 
         // 5. 상단 실시간 점수용 — source='보유' + morning/evening 기준 (routineRouter의 getCumulativeRate와 동일)
         const [todayStats] = await conn.query(`
@@ -71,7 +70,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
             JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = a.user_no
             WHERE a.user_no = ?
               AND cd.chal_no = ?
-              AND DATE(a.routine_checked) = ?
+              AND DATE(a.created_at) = ?
               AND uc.source = '보유'
               AND r.routine_time IN ('morning', 'evening')
         `, [user_no, chal_no, today]);
@@ -108,7 +107,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
                     `, [user_no, today]);
                     const prev_total_score = prevResults[0]?.total_score || 0.0;
 
-                    const commentRes = await axios.post(`${FASTAPI_URL}/api/daily/comment`, {
+                    const commentRes = await axios.post(`${FASTAPI_URL}/api/report/comment`, {
                         skin_type: req.user.skin_type || "정보 없음",
                         total_score: Number(analysis.total_score),
                         prev_total_score: Number(prev_total_score)
@@ -184,18 +183,23 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
         `;
         const [scores] = await conn.query(scoreQuery, [user_no, start_date, end_date]);
 
-        // 3. 아래 그래프 데이터 (루틴 달성률)
-        // [수정] DATE() 함수를 적용하여 오늘(4/8) 데이터까지 포함되도록 함
+        // 3. 아래 그래프 데이터 (루틴 달성률) — created_at 기준, getCumulativeRate와 동일 전략
         const [dailyRates] = await conn.query(`
-            SELECT 
-                DATE(routine_checked) AS date, 
-                ROUND(SUM(CASE WHEN action_yn = 'Y' THEN 1 ELSE 0 END) / COUNT(*) * 100) AS rate
-            FROM actions 
-            WHERE user_no = ? 
-              AND DATE(routine_checked) BETWEEN DATE(?) AND DATE(?)
-            GROUP BY DATE(routine_checked) 
+            SELECT
+                DATE(a.created_at) AS date,
+                ROUND(SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) / COUNT(*) * 100) AS rate
+            FROM actions a
+            JOIN challenge_details cd ON a.detail_no = cd.detail_no
+            JOIN routines r ON cd.routine_no = r.routine_no
+            JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = a.user_no
+            WHERE a.user_no = ?
+              AND cd.chal_no = ?
+              AND DATE(a.created_at) BETWEEN DATE(?) AND DATE(?)
+              AND uc.source = '보유'
+              AND r.routine_time IN ('morning', 'evening')
+            GROUP BY DATE(a.created_at)
             ORDER BY date ASC
-        `, [user_no, start_date, end_date]);
+        `, [user_no, chal_no, start_date, end_date]);
 
         // 첫날과 마지막날 데이터 추출 (UI 표시용)
         const formatData = (data) => data ? { ...data, image_url: data.file_name ? `/${data.file_name}` : null } : null;

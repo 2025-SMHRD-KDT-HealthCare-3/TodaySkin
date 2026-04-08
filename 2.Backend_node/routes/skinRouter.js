@@ -61,8 +61,8 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
         }
 
         const user_no = req.user.user_no;
-        const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
-        const today = kstNow.toISOString().slice(0, 10); // KST 날짜
+        const d = new Date();
+        const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
         // 오늘 기존 업로드 확인 (uploaded_at이 KST로 저장되므로 KST today로 비교)
         const [existing] = await conn.query(
@@ -73,6 +73,8 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
              LIMIT 1`,
             [user_no, today]
         );
+
+console.log('[DEBUG] existing =', JSON.stringify(existing));
 
         let upload_no;
         let existingAnlsNo = null;
@@ -87,12 +89,12 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
             existingAnlsNo = row.anls_no;
 
             await conn.query(
-                'UPDATE uploads SET file_name=?, file_size=?, uploaded_at=CONVERT_TZ(NOW(), \'+00:00\', \'+09:00\') WHERE upload_no=?',
+                'UPDATE uploads SET file_name=?, file_size=?, uploaded_at=NOW() WHERE upload_no=?',
                 [uploadedPath, req.file.size, upload_no]
             );
         } else {
             const [uploadRes] = await conn.query(
-                'INSERT INTO uploads (user_no, file_name, file_size, file_ext, uploaded_at) VALUES (?, ?, ?, ?, CONVERT_TZ(NOW(), \'+00:00\', \'+09:00\'))',
+                'INSERT INTO uploads (user_no, file_name, file_size, file_ext, uploaded_at) VALUES (?, ?, ?, ?, NOW())',
                 [user_no, uploadedPath, req.file.size, path.extname(req.file.originalname).toLowerCase()]
             );
 
@@ -138,7 +140,7 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
         if (existingAnlsNo !== null) {
             await conn.query(
                 `UPDATE img_analyses
-                 SET anls_result=?, acne_score=?, pore_score=?, total_score=?, processing_img=?, created_at=CONVERT_TZ(NOW(), '+00:00', '+09:00')
+                 SET anls_result=?, acne_score=?, pore_score=?, total_score=?, processing_img=?, created_at=NOW()
                  WHERE anls_no=?`,
                 [
                     JSON.stringify(dbAiData),
@@ -157,7 +159,7 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
             const [analysisRes] = await conn.query(
                 `INSERT INTO img_analyses
                 (upload_no, model_name, anls_result, acne_score, pore_score, total_score, processing_img, created_at)
-                VALUES (?, 'YOLO_2MODELS', ?, ?, ?, ?, ?, CONVERT_TZ(NOW(), '+00:00', '+09:00'))`,
+                VALUES (?, 'YOLO_2MODELS', ?, ?, ?, ?, ?, NOW())`,
                 [
                     upload_no,
                     JSON.stringify(dbAiData),

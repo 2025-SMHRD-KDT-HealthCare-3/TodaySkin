@@ -9,7 +9,8 @@ const pool = mysql.createPool({
     database: process.env.DB_NAME,
     waitForConnections: true,    // 연결이 다 차면 대기함
     connectionLimit: 10,         // 최대 10개까지 통로를 유지함
-    queueLimit: 0
+    queueLimit: 0,
+    dateStrings: true
 });
 
 module.exports = pool;
