@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # ========== LLM 설정 ==========
 # 한줄 코멘트라 토큰 적게 필요
-_llm = ChatOpenAI(model="gpt-5.4-mini", max_tokens=200)
+_llm = ChatOpenAI(model="gpt-4o-mini", max_tokens=200)
 
 
 

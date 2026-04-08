@@ -95,7 +95,7 @@ class RoutineRequest(BaseModel):
     age: int = 0
     gender: str = ""
     total_score_change: float = 0.0
-   
+
 
 
 # ---------- 챗봇 요청 ----------
@@ -124,8 +124,8 @@ class CosmeticRequest(BaseModel):
 # ---------- 데일리 리포트 코멘트 요청 ----------
 class DailyCommentRequest(BaseModel):
     skin_type: str = ""
-    total_score: float = 0.0
-    prev_total_score: float = 0.0
+    acne_score: float = 0.0
+    pore_score: float = 0.0
 
 
 # ==================================
