@@ -61,16 +61,17 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
         }
 
         const user_no = req.user.user_no;
-        const today = new Date().toISOString().slice(0, 10);
+        const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+        const today = kstNow.toISOString().slice(0, 10); // KST 날짜
 
-        // 오늘 기존 업로드 확인
+        // 오늘 기존 업로드 확인 (uploaded_at이 KST로 저장되므로 KST today로 비교)
         const [existing] = await conn.query(
             `SELECT u.upload_no, u.file_name, a.anls_no, a.processing_img
              FROM uploads u
              LEFT JOIN img_analyses a ON u.upload_no = a.upload_no
-             WHERE u.user_no = ? AND DATE(u.uploaded_at) = CURDATE()
+             WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
              LIMIT 1`,
-            [user_no]
+            [user_no, today]
         );
 
         let upload_no;
@@ -86,12 +87,12 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
             existingAnlsNo = row.anls_no;
 
             await conn.query(
-                'UPDATE uploads SET file_name=?, file_size=?, uploaded_at=NOW() WHERE upload_no=?',
+                'UPDATE uploads SET file_name=?, file_size=?, uploaded_at=CONVERT_TZ(NOW(), \'+00:00\', \'+09:00\') WHERE upload_no=?',
                 [uploadedPath, req.file.size, upload_no]
             );
         } else {
             const [uploadRes] = await conn.query(
-                'INSERT INTO uploads (user_no, file_name, file_size, file_ext, uploaded_at) VALUES (?, ?, ?, ?, NOW())',
+                'INSERT INTO uploads (user_no, file_name, file_size, file_ext, uploaded_at) VALUES (?, ?, ?, ?, CONVERT_TZ(NOW(), \'+00:00\', \'+09:00\'))',
                 [user_no, uploadedPath, req.file.size, path.extname(req.file.originalname).toLowerCase()]
             );
 
@@ -137,7 +138,7 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
         if (existingAnlsNo !== null) {
             await conn.query(
                 `UPDATE img_analyses
-                 SET anls_result=?, acne_score=?, pore_score=?, total_score=?, processing_img=?, created_at=NOW()
+                 SET anls_result=?, acne_score=?, pore_score=?, total_score=?, processing_img=?, created_at=CONVERT_TZ(NOW(), '+00:00', '+09:00')
                  WHERE anls_no=?`,
                 [
                     JSON.stringify(dbAiData),
@@ -156,7 +157,7 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
             const [analysisRes] = await conn.query(
                 `INSERT INTO img_analyses
                 (upload_no, model_name, anls_result, acne_score, pore_score, total_score, processing_img, created_at)
-                VALUES (?, 'YOLO_2MODELS', ?, ?, ?, ?, ?, NOW())`,
+                VALUES (?, 'YOLO_2MODELS', ?, ?, ?, ?, ?, CONVERT_TZ(NOW(), '+00:00', '+09:00'))`,
                 [
                     upload_no,
                     JSON.stringify(dbAiData),
@@ -181,9 +182,9 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
                 `SELECT a.total_score
                  FROM img_analyses a
                  JOIN uploads u ON a.upload_no = u.upload_no
-                 WHERE u.user_no = ? AND DATE(u.uploaded_at) < CURDATE()
+                 WHERE u.user_no = ? AND DATE(u.uploaded_at) < ?
                  ORDER BY a.created_at DESC LIMIT 1`,
-                [user_no]
+                [user_no, today]
             );
 
             const prev_total_score = prevScore[0]?.total_score || 0;

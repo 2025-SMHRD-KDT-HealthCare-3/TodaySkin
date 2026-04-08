@@ -50,7 +50,7 @@ export default function MainDashboard({ pageCase, challenge, report, routine, se
                     );
                     const total = ownedItems.length;
                     const done = ownedItems.filter((i) => i.completed).length;
-                    updated.cumulative_achievement_rate = total > 0 ? Math.round((done / total) * 100) : 0;
+                    updated.daily_rate = total > 0 ? Math.round((done / total) * 100) : 0;
 
                     return updated;
                 });
@@ -140,13 +140,13 @@ export default function MainDashboard({ pageCase, challenge, report, routine, se
                         <div style={{ flex: 1, textAlign: "center" }}>
                             <div style={{
                                 fontSize: 36, fontWeight: 700,
-                                color: getScoreColor(routine?.cumulative_achievement_rate || 0), lineHeight: 1,
-                            }}>{routine?.cumulative_achievement_rate || 0}</div>
+                                color: getScoreColor(routine?.daily_rate ?? 0), lineHeight: 1,
+                            }}>{routine?.daily_rate ?? 0}</div>
                             <div style={{ fontSize: 11, color: D.textLight, margin: "4px 0 8px" }}>/100</div>
                             <div style={{ height: 6, borderRadius: 3, background: D.border, overflow: "hidden" }}>
                                 <div style={{
-                                    width: `${routine?.cumulative_achievement_rate || 0}%`, height: "100%", borderRadius: 3,
-                                    background: getScoreColor(routine?.cumulative_achievement_rate || 0),
+                                    width: `${routine?.daily_rate ?? 0}%`, height: "100%", borderRadius: 3,
+                                    background: getScoreColor(routine?.daily_rate ?? 0),
                                     transition: "width 0.6s ease",
                                 }} />
                             </div>
