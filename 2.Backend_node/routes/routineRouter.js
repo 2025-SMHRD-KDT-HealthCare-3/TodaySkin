@@ -1,6 +1,6 @@
 /*
  * routineRouter — 루틴 관리
- - GET   /api/routine          루틴 조회 (없으면 AI 생성)
+ - GET   /api/routine           루틴 조회 (없으면 AI 생성)
  - PATCH /api/routine/:action_no 루틴 체크 (완료/미완료 토글)
 */
 
@@ -14,6 +14,12 @@ const { requireLogin } = require('../middleware/auth');
 
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
+// KST 날짜 헬퍼
+const getKSTDate = () => {
+    const now = new Date();
+    const kst = new Date(now.getTime() + (9 * 60 * 60 * 1000));
+    return kst.toISOString().slice(0, 10); // "YYYY-MM-DD"
+};
 
 // 1. 루틴 저장 헬퍼
 async function saveRoutineToDB(user_no, chal_no, routineData) {
@@ -30,7 +36,6 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
                 if (cosResult.length > 0) cos_no = cosResult[0].cos_no;
             }
 
-            // DB에 없는 제품(cos_no null)이라도 description이 있으면 일단 저장 (루틴 개수 유지)
             if (time !== 'special' && !cos_no && !item.cos_name) continue;
             if (time === 'special' && !item.description) continue;
 
@@ -42,7 +47,6 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
                     await conn.query("INSERT INTO user_cosmetics (user_no, cos_no, source) VALUES (?, ?, ?)",
                         [user_no, cos_no, isWaterWash ? '보유' : '추천']);
                 } else if (isWaterWash && checkOwned[0].source === '추천') {
-                    // 이미 추천으로 되어있어도 물 세안이면 보유로 강제 업데이트
                     await conn.query("UPDATE user_cosmetics SET source = '보유' WHERE user_no = ? AND cos_no = ?", [user_no, cos_no]);
                 }
             }
@@ -55,24 +59,24 @@ async function saveRoutineToDB(user_no, chal_no, routineData) {
 
             const [detailRes] = await conn.query("INSERT INTO challenge_details (chal_no, routine_no) VALUES (?, ?)", [chal_no, routineRes.insertId]);
 
-            // 해당 루틴이 '보유'인지 확인 후 actions에 삽입
             const [checkSource] = await conn.query(
-                "SELECT source FROM user_cosmetics WHERE user_no = ? AND cos_no = ?", 
+                "SELECT source FROM user_cosmetics WHERE user_no = ? AND cos_no = ?",
                 [user_no, cos_no]
             );
 
             if (checkSource.length > 0 && checkSource[0].source === '보유') {
                 await conn.query(
-                    "INSERT INTO actions (user_no, detail_no, action_yn, created_at) VALUES (?, ?, 'N', NOW())", 
+                    "INSERT INTO actions (user_no, detail_no, action_yn, created_at, routine_checked) VALUES (?, ?, 'N', NOW(), CONVERT_TZ(NOW(), '+00:00', '+09:00'))",
                     [user_no, detailRes.insertId]
                 );
             }
+        }
     }
-}
 }
 
 // 2. 달성률 계산 헬퍼
 async function getCumulativeRate(user_no, chal_no) {
+    const today = getKSTDate();
     const sql = `
         SELECT 
         COUNT(a.action_no) AS total_count,
@@ -83,128 +87,55 @@ async function getCumulativeRate(user_no, chal_no) {
         JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = a.user_no
         WHERE a.user_no = ? 
         AND cd.chal_no = ?
+        AND DATE(a.routine_checked) = ?
         AND uc.source = '보유'                    
         AND r.routine_time IN ('morning', 'evening') 
     `;
-    const [results] = await conn.query(sql, [user_no, chal_no]);
+    const [results] = await conn.query(sql, [user_no, chal_no, today]);
 
     const total = Number(results[0].total_count) || 0;
     const done = Number(results[0].done_count) || 0;
-
     const calculated_rate = total > 0 ? Math.round((done / total) * 100) : 0;
 
-    return {
-        daily_rate: calculated_rate,
-        cumulative_rate: calculated_rate,
-        total: total,
-        done: done
-    };
+    return { daily_rate: calculated_rate, total, done };
 }
 
 // 3. 루틴 조회 및 생성 (GET)
 router.get('/', requireLogin, async (req, res, next) => {
     const user_no = req.user.user_no;
+    const today = getKSTDate();
 
     try {
-        const chalSql = `
-            SELECT chal_no, chal_type, start_date, DATEDIFF(NOW(), start_date) + 1 AS day_count
-            FROM challenges
-            WHERE user_no = ? AND chal_status = '진행중'
-            ORDER BY created_at DESC LIMIT 1
-        `;
-        const [chalResults] = await conn.query(chalSql, [user_no]);
+        const [chalResults] = await conn.query(
+            "SELECT chal_no, chal_type, start_date, DATEDIFF(NOW(), start_date) + 1 AS day_count FROM challenges WHERE user_no = ? AND chal_status = '진행중' ORDER BY created_at DESC LIMIT 1",
+            [user_no]
+        );
 
         if (chalResults.length === 0) throw new ValidationError("진행 중인 챌린지가 없습니다.", 404);
-
         const { chal_no, chal_type, day_count } = chalResults[0];
 
-        // 오늘 이미 생성된 루틴이 있는지 확인
+        // 오늘 이미 생성된 기록이 있는지 확인
         const [existingCheck] = await conn.query(`
-            SELECT a.action_no 
-            FROM actions a
+            SELECT a.action_no FROM actions a
             JOIN challenge_details cd ON a.detail_no = cd.detail_no
-            WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.created_at) = CURDATE()
+            WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.routine_checked) = ?
             LIMIT 1
-        `, [chal_no, user_no]);
+        `, [chal_no, user_no, today]);
 
-        // 1일차 / 8일차 이면서 오늘 생성된 기록이 없을 때만 루틴 생성
         const needNewRoutine = (day_count === 1 || day_count === 8) && existingCheck.length === 0;
 
         if (needNewRoutine) {
-            // 오늘 이미 생성된 루틴 데이터가 있으면 먼저 삭제
-            await conn.query(`
-                DELETE a FROM actions a
-                JOIN challenge_details cd ON a.detail_no = cd.detail_no
-                WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.created_at) = CURDATE()
-            `, [chal_no, user_no]);
+            // 중복 방지 삭제 후 재생성
+            await conn.query(
+                "DELETE a FROM actions a JOIN challenge_details cd ON a.detail_no = cd.detail_no WHERE cd.chal_no = ? AND a.user_no = ? AND DATE(a.routine_checked) = ?",
+                [chal_no, user_no, today]
+            );
 
-            await conn.query(`
-                DELETE FROM challenge_details 
-                WHERE chal_no = ? AND detail_no NOT IN (SELECT detail_no FROM actions)
-            `, [chal_no]);
-            
-            // AI 생성을 위한 데이터 준비
             const [analysis] = await conn.query(
                 "SELECT acne_score, pore_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no WHERE u.user_no = ? ORDER BY a.created_at DESC LIMIT 1",
                 [user_no]
             );
 
-            const [cosmetics] = await conn.query(
-                `SELECT c.cos_name, c.cos_type, c.cos_ingredient 
-                    FROM user_cosmetics uc 
-                    JOIN cosmetics c ON uc.cos_no = c.cos_no 
-                    WHERE uc.user_no = ? AND uc.source = '보유'`,
-                [user_no]
-            );
-            const userCosmeticsText = cosmetics.map(c => `${c.cos_name}(${c.cos_type})`).join(", ") || "없음";
-
-            const userTypes = [...new Set(cosmetics.map(c => c.cos_type))];
-            let candidatesText = "없음";
-            if (userTypes.length > 0) {
-                const placeholders = userTypes.map(() => '?').join(',');
-                const [candidates] = await conn.query(
-                    `SELECT cos_name, cos_brand, cos_type
-                     FROM (
-                         SELECT cos_name, cos_brand, cos_type,
-                                ROW_NUMBER() OVER (PARTITION BY cos_type ORDER BY cos_no) AS rn
-                         FROM cosmetics
-                         WHERE cos_type NOT IN (${placeholders})
-                     ) ranked
-                     WHERE rn <= 10`,
-                    userTypes
-                );
-                candidatesText = candidates.map(c => `- ${c.cos_name}(${c.cos_brand}, ${c.cos_type})`).join("\n");
-            } else {
-                const [candidates] = await conn.query(
-                    `SELECT cos_name, cos_brand, cos_type
-                     FROM (
-                         SELECT cos_name, cos_brand, cos_type,
-                                ROW_NUMBER() OVER (PARTITION BY cos_type ORDER BY cos_no) AS rn
-                         FROM cosmetics
-                     ) ranked
-                     WHERE rn <= 10`
-                );
-                candidatesText = candidates.map(c => `- ${c.cos_name}(${c.cos_brand}, ${c.cos_type})`).join("\n");
-            }
-
-            let total_score_change = 0;
-            let compliance_rate = 0;
-
-            if (day_count === 8) {
-                const [prevAnalyses] = await conn.query(
-                    "SELECT total_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no WHERE u.user_no = ? ORDER BY a.created_at DESC LIMIT 2",
-                    [user_no]
-                );
-
-                if (prevAnalyses.length === 2) {
-                    total_score_change = Number((prevAnalyses[0].total_score - prevAnalyses[1].total_score).toFixed(1));
-                }
-
-                const rates = await getCumulativeRate(user_no, chal_no);
-                compliance_rate = rates.cumulative_rate;
-            }
-
-            // FastAPI 호출
             const pythonRes = await axios.post(`${FASTAPI_URL}/api/routine/generate`, {
                 user_no: Number(user_no),
                 skin_type: req.user.skin_type || "지성",
@@ -212,76 +143,60 @@ router.get('/', requireLogin, async (req, res, next) => {
                 pore_score: Number(analysis[0]?.pore_score || 0),
                 chal_type: Number(chal_type),
                 week: day_count <= 7 ? 1 : 2,
-                age: Number(req.user.age || 25),
-                gender: req.user.gender || "M",
-                total_score_change: total_score_change,
-                compliance_rate: Number(compliance_rate),
                 fixed_routines: "물 세안"
             }, { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 60000 });
 
-            const routine = pythonRes.data.data.routine;
-            if (!routine) throw new ValidationError("AI 루틴 생성에 실패했습니다.", 500);
+            await saveRoutineToDB(user_no, chal_no, pythonRes.data.data.routine);
 
-            // DB 저장
-            await saveRoutineToDB(user_no, chal_no, routine);
-
-            } else {
-            // --- [Day 2~7, 9~14] 기존 루틴 불러오기 & 복사 로직 ---
-            if (existingCheck.length === 0) {
-                // 오늘 날짜의 actions 데이터가 없으면 '보유' 화장품만 골라서 오늘치 기록 생성
-                await conn.query(`
-                    INSERT INTO actions (user_no, detail_no, action_yn, created_at)
-                    SELECT ?, cd.detail_no, 'N', NOW()
-                    FROM challenge_details cd
-                    JOIN routines r ON cd.routine_no = r.routine_no
-                    JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = ?
-                    WHERE cd.chal_no = ? 
-                    AND uc.source = '보유' -- 추천 화장품은 actions 행을 생성하지 않음
-                `, [user_no, user_no, chal_no]);
-            }
+        } else if (existingCheck.length === 0) {
+            // Day 2~7, 9~14: 어제 루틴을 오늘 날짜로 복사
+            await conn.query(`
+                INSERT INTO actions (user_no, detail_no, action_yn, created_at, routine_checked)
+                SELECT ?, cd.detail_no, 'N', NOW(), CONVERT_TZ(NOW(), '+00:00', '+09:00')
+                FROM challenge_details cd
+                JOIN routines r ON cd.routine_no = r.routine_no
+                JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = ?
+                WHERE cd.chal_no = ? AND uc.source = '보유'
+            `, [user_no, user_no, chal_no]);
         }
 
-        // 생성(1일차)이든 복사(2일차)이든, 오늘 날짜의 통합 데이터를 DB에서 꺼내서 응답함
+        // 최종 응답 데이터 구성
         const routineSql = `
-            SELECT r.routine_time, r.routine_order, c.cos_name, 
-                r.description, r.recommend_reason,
+            SELECT 
+                r.routine_time, 
+                r.routine_order, 
+                c.cos_name, 
+                r.description, 
+                r.recommend_reason,
                 IFNULL(uc.source, '추천') AS source,
                 a.action_no,
                 CASE WHEN a.action_yn = 'Y' THEN true ELSE false END AS completed
             FROM challenge_details cd
             JOIN routines r ON cd.routine_no = r.routine_no
-            LEFT JOIN cosmetics c ON r.cos_no = c.cos_no 
-            LEFT JOIN user_cosmetics uc ON uc.user_no = ? AND uc.cos_no = c.cos_no
-            LEFT JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ?
-            WHERE cd.chal_no = ? AND DATE(a.created_at) = CURDATE()
+            LEFT JOIN cosmetics c ON r.cos_no = c.cos_no
+            LEFT JOIN user_cosmetics uc ON uc.cos_no = r.cos_no AND uc.user_no = ?
+            LEFT JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ? AND DATE(a.routine_checked) = ?
+            WHERE cd.chal_no = ?
             ORDER BY r.routine_time, r.routine_order
         `;
-        const [dbRows] = await conn.query(routineSql, [user_no, user_no, chal_no]);
+        const [dbRows] = await conn.query(routineSql, [user_no, user_no, today, chal_no]);
 
         const finalGrouped = { morning: [], evening: [], special: [] };
-
         dbRows.forEach(row => {
-            if (!finalGrouped[row.routine_time]) return;
-
-            finalGrouped[row.routine_time].push({
-                order: row.routine_order,
-                // 스페셜이면 내용을 이름으로, 아니면 화장품 이름을 출력
-                name: row.routine_time === 'special'
-                    ? (row.description || "스페셜 관리 가이드")
-                    : (row.cos_name || "추천 제품"),
-                source: row.source || (row.routine_time === 'special' ? "정보" : "추천"),
-                completed: row.completed === 1 || row.completed === true,
-                action_no: row.action_no,
-                description: row.description || "",
-                recommend_reason: row.recommend_reason || ""
-            });
+            if (finalGrouped[row.routine_time]) {
+                finalGrouped[row.routine_time].push({
+                    order: row.routine_order,
+                    name: row.routine_time === 'special' ? (row.description || "관리") : (row.cos_name || "추천 제품"),
+                    source: row.source,
+                    completed: row.completed === 1 || row.completed === true,
+                    action_no: row.action_no,
+                    description: row.description || ""
+                });
+            }
         });
 
-        const finalRates = await getCumulativeRate(user_no, chal_no);
-        res.json({
-            status: "success",
-            data: { day_count, cumulative_achievement_rate: finalRates.cumulative_rate, routine: finalGrouped }
-        });
+        const rates = await getCumulativeRate(user_no, chal_no);
+        res.json({ status: "success", data: { day_count, daily_rate: rates.daily_rate, routine: finalGrouped } });
 
     } catch (error) {
         next(error);
@@ -304,12 +219,7 @@ router.patch('/:action_no', requireLogin, async (req, res, next) => {
         const [chal] = await conn.query("SELECT chal_no FROM challenges WHERE user_no = ? AND chal_status = '진행중' LIMIT 1", [user_no]);
         const rates = await getCumulativeRate(user_no, chal[0]?.chal_no);
 
-        res.json({
-            status: "success",
-            message: "상태 변경 완료",
-            cumulative_achievement_rate: rates.cumulative_rate,
-            daily_rate: rates.daily_rate
-        });
+        res.json({ status: "success", message: "상태 변경 완료", daily_rate: rates.daily_rate });
     } catch (error) {
         next(error);
     }
