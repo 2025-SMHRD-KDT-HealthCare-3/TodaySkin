@@ -25,3 +25,6 @@ uploads/*
 
 # .gitkeep 파일만은 예외로 두어 폴더 구조를 유지함
 !uploads/.gitkeep
+
+# chroma_cosm_db폴더
+3.Ai_FastAPI/services/chroma_cosm_db

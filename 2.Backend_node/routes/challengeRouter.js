@@ -55,16 +55,15 @@ router.post('/', requireLogin, async (req, res, next) => {
             await conn.query("DELETE FROM user_cosmetics WHERE user_no = ? AND source = '추천'", [user_no]);
         }
 
-        // [신규 챌린지 계산]
-        const startDate = new Date();
-        const endDate = new Date();
-        endDate.setDate(endDate.getDate() + Number(chal_type) - 1);
-
-        const formatDate = (d) => d.toISOString().slice(0, 10);
+        // [신규 챌린지 계산] KST 기준 날짜 사용
+        const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+        const startDate = kstNow.toISOString().slice(0, 10);
+        const kstEnd = new Date(kstNow.getTime() + (Number(chal_type) - 1) * 24 * 60 * 60 * 1000);
+        const endDate = kstEnd.toISOString().slice(0, 10);
 
         const [result] = await conn.query(
-            "INSERT INTO challenges (user_no, chal_name, start_date, end_date, chal_type, chal_status, created_at) VALUES (?, ?, ?, ?, ?, '진행중', NOW())",
-            [user_no, chal_name, formatDate(startDate), formatDate(endDate), chal_type]
+            "INSERT INTO challenges (user_no, chal_name, start_date, end_date, chal_type, chal_status, created_at) VALUES (?, ?, ?, ?, ?, '진행중', CONVERT_TZ(NOW(), '+00:00', '+09:00'))",
+            [user_no, chal_name, startDate, endDate, chal_type]
         );
 
         return res.status(201).json({
@@ -98,7 +97,7 @@ router.post('/', requireLogin, async (req, res, next) => {
 router.get('/', requireLogin, async (req, res, next) => {
     try {
         const user_no = req.user.user_no;
-        const today = new Date().toISOString().slice(0, 10);
+        const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10); // KST 날짜
 
         // 진행중인 최신 챌린지 1개 조회
         const [results] = await conn.query(`
@@ -114,9 +113,9 @@ router.get('/', requireLogin, async (req, res, next) => {
         }
 
         const challenge = results[0];
-        const endDateStr = new Date(challenge.end_date).toISOString().slice(0, 10);
+        const endDateStr = String(challenge.end_date).slice(0, 10); // DATE 컬럼 → 문자열 직접 비교
 
-        // 오늘 날짜가 종료일을 넘었는지 확인
+        // 오늘 날짜(KST)가 종료일을 넘었는지 확인
         if (today > endDateStr) {
             await conn.query(
                 "UPDATE challenges SET chal_status = '완료' WHERE chal_no = ?",

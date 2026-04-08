@@ -24,7 +24,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
         // 1. [날짜 보정] 서버가 UTC여도 무조건 한국 날짜 "YYYY-MM-DD" 생성
         const now = new Date();
         const kstNow = new Date(now.getTime() + (9 * 60 * 60 * 1000));
-        const today = kstNow.toISOString().slice(0, 10); 
+        const today = kstNow.toISOString().slice(0, 10);
 
         // 2. 진행 중인 챌린지 조회
         const [chalResults] = await conn.query(
@@ -60,27 +60,32 @@ router.get('/daily', requireLogin, async (req, res, next) => {
             ORDER BY date ASC
         `, [user_no]);
 
-        // 5. 상단 실시간 점수용 (actions 테이블만 직접 조회하여 0% 버그 해결)
+        // 5. 상단 실시간 점수용 — source='보유' + morning/evening 기준 (routineRouter의 getCumulativeRate와 동일)
         const [todayStats] = await conn.query(`
-           SELECT 
-                COUNT(*) AS total,
-                SUM(CASE WHEN action_yn = 'Y' THEN 1 ELSE 0 END) AS done
-            FROM actions
-            WHERE user_no = ? 
-            /* 핵심: DATE()로 감싸야 '2026-04-08 10:20:00'을 '2026-04-08'로 인식함 */
-            AND DATE(routine_checked) = ?
-        `, [user_no, today]);
+            SELECT
+                COUNT(a.action_no) AS total,
+                SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) AS done
+            FROM actions a
+            JOIN challenge_details cd ON a.detail_no = cd.detail_no
+            JOIN routines r ON cd.routine_no = r.routine_no
+            JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = a.user_no
+            WHERE a.user_no = ?
+              AND cd.chal_no = ?
+              AND DATE(a.routine_checked) = ?
+              AND uc.source = '보유'
+              AND r.routine_time IN ('morning', 'evening')
+        `, [user_no, chal_no, today]);
 
         const total = Number(todayStats[0].total) || 0;
         const done = Number(todayStats[0].done) || 0;
         const daily_rate = total > 0 ? Math.round((done / total) * 100) : 0;
 
-        const cumulative_rate = dailyRates.length > 0 
-            ? Math.round(dailyRates.reduce((acc, curr) => acc + curr.rate, 0) / dailyRates.length) 
+        const cumulative_rate = dailyRates.length > 0
+            ? Math.round(dailyRates.reduce((acc, curr) => acc + curr.rate, 0) / dailyRates.length)
             : 0;
 
         // [서버 터미널 확인용 로그]
-        console.log(`[REPORT CHECK] 유저:${user_no} | 날짜:${today} | 달성률:${daily_rate}% (전체:${total}/완료:${done})`);
+        // console.log(`[REPORT CHECK] 유저:${user_no} | 날짜:${today} | 달성률:${daily_rate}% (전체:${total}/완료:${done})`);
 
         // 6. AI 코멘트 로직
         let line_comment = "오늘의 피부 상태를 기록해보세요!";
@@ -160,18 +165,19 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
             [chal_no, user_no]
         );
         if (chalResults.length === 0) throw new ValidationError("챌린지 정보를 찾을 수 없습니다.", 404);
-        
+
         const { start_date, end_date } = chalResults[0];
 
         // 2. 위 그래프 데이터 (이미지 분석 점수)
         // [수정] 챌린지 시작일(start_date)부터의 모든 데이터를 가져옵니다.
+        // 날짜는 KST 변환해서 저장
         const scoreQuery = `
-            SELECT 
-                DATE(a.created_at) AS date, 
-                a.total_score, a.acne_score, a.pore_score
+            SELECT
+                DATE(a.created_at) AS date,
+             a.total_score, a.acne_score, a.pore_score
             FROM img_analyses a
             JOIN uploads u ON a.upload_no = u.upload_no
-            WHERE u.user_no = ? 
+            WHERE u.user_no = ?
               AND DATE(a.created_at) BETWEEN DATE(?) AND DATE(?)
             ORDER BY a.created_at ASC
         `;
@@ -200,7 +206,7 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
                 start_date,
                 end_date,
                 // 리스트가 있으면 첫 번째와 마지막 데이터 전달
-                first_day: scores.length > 0 ? scores[0] : null, 
+                first_day: scores.length > 0 ? scores[0] : null,
                 latest_day: scores.length > 0 ? scores[scores.length - 1] : null,
                 daily_rates: dailyRates, // 아래 그래프용
                 score_rates: scores      // 위 그래프용 (프론트에서 이 데이터를 쓰게 하세요)
