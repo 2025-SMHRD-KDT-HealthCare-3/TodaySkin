@@ -325,7 +325,7 @@ export default function SkinReport() {
                                                 padding: "8px 10px", background: "rgba(0,0,0,0.5)",
                                                 color: D.white, fontSize: 11,
                                             }}>
-                                                <div>{dotDate(reportData.first_day.created_at)}</div>
+                                                <div>{dotDate(reportData.first_day.date)}</div>
                                                 <div>점수: {Math.round(reportData.first_day.total_score)}</div>
                                             </div>
                                         </div>
@@ -350,7 +350,7 @@ export default function SkinReport() {
                                                 padding: "8px 10px", background: "rgba(0,0,0,0.5)",
                                                 color: D.white, fontSize: 11,
                                             }}>
-                                                <div>{dotDate(reportData.latest_day.created_at)}</div>
+                                                <div>{dotDate(reportData.latest_day.date)}</div>
                                                 <div>점수: {Math.round(reportData.latest_day.total_score)}</div>
                                             </div>
                                         </div>
