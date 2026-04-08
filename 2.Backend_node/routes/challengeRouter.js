@@ -190,26 +190,35 @@ router.get('/history', requireLogin, async (req, res, next) => {
 */
 router.get('/:chal_no', requireLogin, async (req, res, next) => {
     try {
-        const { chal_no } = req.params;
-        if (isNaN(chal_no)) throw new ValidationError("올바른 번호를 입력해주세요.");
+        const chal_no = req.params.chal_no;
+        const user_no = req.user.user_no;
 
-        const [results] = await conn.query(`
+        // [서버 터미널 확인용 로그] 서버 켜진 창에 이 글자가 떠야 합니다!
+        console.log("-----------------------------------------");
+        console.log("🔥 준하님, 지금 '새로운' 백엔드 코드가 돌고 있어요! 🔥");
+        console.log("-----------------------------------------");
+
+        const [info] = await conn.query(
+            "SELECT * FROM challenges WHERE chal_no = ? AND user_no = ?",
+            [chal_no, user_no]
+        );
+
+        const [daily] = await conn.query(`
             SELECT 
-                c.*,
-                IFNULL(ROUND(SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) / NULLIF(COUNT(a.action_no), 0) * 100, 1), 0) AS cumulative_rate
-            FROM challenges c
-            LEFT JOIN challenge_details cd ON c.chal_no = cd.chal_no
-            LEFT JOIN actions a ON cd.detail_no = a.detail_no
-            WHERE c.chal_no = ? AND c.user_no = ?
-            GROUP BY c.chal_no
-        `, [chal_no, req.user.user_no]);
+                DATE_FORMAT(CONVERT_TZ(a.routine_checked, '+00:00', '+09:00'), '%c/%e') AS date,
+                ROUND(SUM(IF(a.action_yn = 'Y', 1, 0)) / COUNT(*) * 100) AS rate
+            FROM actions a
+            JOIN challenge_details cd ON a.detail_no = cd.detail_no
+            WHERE cd.chal_no = ? AND a.user_no = ?
+            GROUP BY DATE(CONVERT_TZ(a.routine_checked, '+00:00', '+09:00'))
+            ORDER BY DATE(CONVERT_TZ(a.routine_checked, '+00:00', '+09:00')) ASC
+        `, [chal_no, user_no]);
 
-        if (results.length === 0) throw new ValidationError("정보를 찾을 수 없습니다.", 404);
-
-        return res.json({ status: "success", data: results[0] });
-    } catch (error) {
-        next(error);
-    }
+        res.json({ 
+            status: "success", 
+            is_this_new_code: "YES! NEW CODE!", // <-- 이 문구가 JSON에 나와야 합니다!
+            data: { ...info[0], daily_rates: daily } 
+        });
+    } catch (error) { next(error); }
 });
-
 module.exports = router;
