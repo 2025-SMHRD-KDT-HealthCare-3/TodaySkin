@@ -85,34 +85,32 @@ router.get('/daily', requireLogin, async (req, res, next) => {
         if (has_today_analysis) {
             const analysis = todayResults[0];
             const [existingReport] = await conn.query(`
-                SELECT line_comment FROM daily_reports
-                WHERE user_no = ? AND chal_no = ? AND DATE(created_at) = ?
-                LIMIT 1
-            `, [user_no, chal_no, today]);
+        SELECT line_comment FROM daily_reports
+        WHERE user_no = ? AND chal_no = ? AND DATE(created_at) = ?
+        LIMIT 1
+    `, [user_no, chal_no, today]);
 
             if (existingReport.length > 0) {
                 line_comment = existingReport[0].line_comment;
             } else {
                 try {
-                    const [prevResults] = await conn.query(`
-                        SELECT total_score FROM img_analyses a JOIN uploads u ON a.upload_no = u.upload_no
-                        WHERE u.user_no = ? AND DATE(u.uploaded_at) < ?
-                        ORDER BY a.created_at DESC LIMIT 1
-                    `, [user_no, today]);
-                    const prev_total_score = prevResults[0]?.total_score || 0.0;
-
+                   
                     const commentRes = await axios.post(`${FASTAPI_URL}/api/daily/comment`, {
                         skin_type: req.user.skin_type || "정보 없음",
-                        total_score: Number(analysis.total_score),
-                        prev_total_score: Number(prev_total_score)
-                    }, { headers: { 'x-internal-key': INTERNAL_API_KEY }, timeout: 8000 });
+                        acne_score: Number(analysis.acne_score), 
+                        pore_score: Number(analysis.pore_score)  
+
+                    }, {
+                        headers: { 'x-internal-key': INTERNAL_API_KEY },
+                        timeout: 8000
+                    });
 
                     if (commentRes.data?.status === 'success') {
                         line_comment = commentRes.data.data.line_comment;
                         await conn.query(`
-                            INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, overall_review, achievement_rate, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, NOW())
-                        `, [user_no, chal_no, analysis.anls_no, line_comment, "오늘의 분석 결과입니다.", daily_rate]);
+                    INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, overall_review, achievement_rate, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, NOW())
+                `, [user_no, chal_no, analysis.anls_no, line_comment, "오늘의 분석 결과입니다.", daily_rate]);
                     }
                 } catch (aiErr) {
                     console.error('[AI ERROR]', aiErr.message);
