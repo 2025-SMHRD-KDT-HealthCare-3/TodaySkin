@@ -49,27 +49,30 @@ router.get('/daily', requireLogin, async (req, res, next) => {
         const has_today_analysis = todayResults.length > 0;
 
         // 달성률 계산
-       const [dailyRates] = await conn.query(`
+      const [dailyRates] = await conn.query(`
             SELECT 
                 DATE_FORMAT(a.created_at, '%Y-%m-%d') AS date,
                 ROUND(
-                    SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) -- 'Y'로 체크한 것만 합산
-                    / COUNT(a.action_no) * 100                        -- 해당 날짜의 전체 '보유' 루틴 수로 나눔
+                    SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) 
+                    / COUNT(a.action_no) * 100
                 ) AS rate
             FROM actions a
             JOIN challenge_details cd ON a.detail_no = cd.detail_no
             JOIN routines r ON cd.routine_no = r.routine_no
-            -- user_cosmetics와 조인하여 '보유' 상태인 것만 필터링
             JOIN user_cosmetics uc ON uc.cos_no = r.cos_no AND uc.user_no = a.user_no
             WHERE a.user_no = ? 
             AND cd.chal_no = ? 
-            AND uc.source = '보유' -- '추천'은 여기서 걸러집니다.
-            GROUP BY DATE(a.created_at)
+            AND uc.source = '보유'
+            AND r.routine_time IN ('morning', 'evening')
+            GROUP BY DATE_FORMAT(a.created_at, '%Y-%m-%d') -- 👈 별칭(date) 대신 함수 통째로 복사!
             ORDER BY date ASC
         `, [user_no, chal_no]);
 
-        const daily_rate = rateResults[0]?.daily_rate || 0;
-        const cumulative_rate = rateResults[0]?.cumulative_rate || 0;
+        const daily_rate = dailyRates.length > 0 ? dailyRates[dailyRates.length - 1].rate : 0;
+
+        const cumulative_rate = dailyRates.length > 0 
+            ? Math.round(dailyRates.reduce((acc, curr) => acc + curr.rate, 0) / dailyRates.length) 
+            : 0;
 
         if (has_today_analysis) {
             const analysis = todayResults[0];
@@ -137,7 +140,7 @@ router.get('/daily', requireLogin, async (req, res, next) => {
                     // 코멘트 DB 저장
                     await conn.query(`
                         INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, overall_review, achievement_rate, created_at)
-                        SELECT ?, ?, a.anls_no, ?, ?, ?, NOW()
+                        SELECT (?, ?, a.anls_no, ?, ?, ?, NOW())
                         FROM img_analyses a
                         JOIN uploads u ON a.upload_no = u.upload_no
                         WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
@@ -241,23 +244,20 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
 
         /* 날짜별 달성률 (보유 항목만, 아침+저녁) */
        const [dailyRates] = await conn.query(`
-                SELECT 
-                    DATE_FORMAT(a.created_at, '%Y-%m-%d') AS date,
-                    ROUND(
-                        SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) 
-                        / COUNT(a.action_no) * 100
-                    ) AS rate
-                FROM actions a
-                JOIN challenge_details cd ON a.detail_no = cd.detail_no
-                JOIN routines r ON cd.routine_no = r.routine_no
-                JOIN user_cosmetics uc ON uc.cos_no = r.cos_no AND uc.user_no = a.user_no
-                WHERE a.user_no = ? 
-                AND cd.chal_no = ? 
-                AND uc.source = '보유'                -- 내가 가진 화장품만
-                AND r.routine_time IN ('morning', 'evening') -- 아침과 저녁 루틴만
-                GROUP BY DATE(a.created_at)
-                ORDER BY date ASC
-            `, [user_no, chal_no]);
+            SELECT 
+                DATE_FORMAT(a.created_at, '%Y-%m-%d') AS report_date,
+                ROUND(SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) / COUNT(a.action_no) * 100) AS rate
+            FROM actions a
+            JOIN challenge_details cd ON a.detail_no = cd.detail_no
+            JOIN routines r ON cd.routine_no = r.routine_no
+            JOIN user_cosmetics uc ON uc.cos_no = r.cos_no AND uc.user_no = a.user_no
+            WHERE a.user_no = ? 
+            AND cd.chal_no = ? 
+            AND uc.source = '보유' 
+            AND r.routine_time IN ('morning', 'evening')
+            GROUP BY DATE_FORMAT(a.created_at, '%Y-%m-%d') -- 👈 여기도 똑같이 함수로 그룹화!
+            ORDER BY report_date ASC
+        `, [user_no, chal_no]);
 
         res.json({
             status: "success",

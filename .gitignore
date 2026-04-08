@@ -25,3 +25,6 @@ uploads/*
 
 # .gitkeep 파일만은 예외로 두어 폴더 구조를 유지함
 !uploads/.gitkeep
+
+# 화장품 벡터 DB (서버 시작 시 자동 생성되므로 Git 관리 불필요)
+3.Ai_FastAPI\services\chroma_cosm_db
