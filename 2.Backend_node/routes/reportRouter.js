@@ -167,7 +167,8 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
         const scoreQuery = `
             SELECT
                 DATE(a.created_at) AS date,
-             a.total_score, a.acne_score, a.pore_score
+                a.total_score, a.acne_score, a.pore_score,
+                u.file_name
             FROM img_analyses a
             JOIN uploads u ON a.upload_no = u.upload_no
             WHERE u.user_no = ?
@@ -199,8 +200,8 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
                 start_date,
                 end_date,
                 // 리스트가 있으면 첫 번째와 마지막 데이터 전달
-                first_day: scores.length > 0 ? scores[0] : null,
-                latest_day: scores.length > 0 ? scores[scores.length - 1] : null,
+                first_day: formatData(scores.length > 0 ? scores[0] : null),
+                latest_day: formatData(scores.length > 0 ? scores[scores.length - 1] : null),
                 daily_rates: dailyRates, // 아래 그래프용
                 score_rates: scores      // 위 그래프용 (프론트에서 이 데이터를 쓰게 하세요)
             }
