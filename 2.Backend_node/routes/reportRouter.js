@@ -119,9 +119,15 @@ router.get('/daily', requireLogin, async (req, res, next) => {
                     if (commentRes.data?.status === 'success') {
                         line_comment = commentRes.data.data.line_comment;
                         await conn.query(`
+<<<<<<< Updated upstream
                             INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, created_at)
                             VALUES (?, ?, ?, ?, NOW())
                         `, [user_no, chal_no, analysis.anls_no, line_comment ]);
+=======
+                            INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, overall_score, achievement_rate, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, NOW())
+                        `, [user_no, chal_no, analysis.anls_no, line_comment, "오늘의 분석 결과입니다.", daily_rate]);
+>>>>>>> Stashed changes
                     }
                 } catch (aiErr) {
                     console.error('[AI ERROR]', aiErr.message);
