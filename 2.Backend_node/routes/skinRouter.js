@@ -74,8 +74,6 @@ router.post('/analyze', requireLogin, upload.single('skin_img'), async (req, res
             [user_no, today]
         );
 
-console.log('[DEBUG] existing =', JSON.stringify(existing));
-
         let upload_no;
         let existingAnlsNo = null;
 
@@ -208,14 +206,13 @@ console.log('[DEBUG] existing =', JSON.stringify(existing));
 
             await conn.query(
                 `INSERT INTO daily_reports
-                (user_no, chal_no, anls_no, line_comment, overall_score,  created_at)
-                VALUES (?, ?, ?, ?, ?, NOW())`,
+                (user_no, chal_no, anls_no, line_comment, created_at)
+                VALUES (?, ?, ?, ?,  NOW())`,
                 [
                     user_no,
                     chal[0].chal_no,
                     anls_no,
-                    line_comment,
-                    total_score
+                    line_comment
                 ]
             );
         }
