@@ -56,13 +56,13 @@ router.post('/', requireLogin, async (req, res, next) => {
         }
 
         // [신규 챌린지 계산] KST 기준 날짜 사용
-        const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
-        const startDate = kstNow.toISOString().slice(0, 10);
-        const kstEnd = new Date(kstNow.getTime() + (Number(chal_type) - 1) * 24 * 60 * 60 * 1000);
-        const endDate = kstEnd.toISOString().slice(0, 10);
+        const now = new Date();
+        const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const end = new Date(now.getTime() + (Number(chal_type) - 1) * 24 * 60 * 60 * 1000);
+        const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
 
         const [result] = await conn.query(
-            "INSERT INTO challenges (user_no, chal_name, start_date, end_date, chal_type, chal_status, created_at) VALUES (?, ?, ?, ?, ?, '진행중', CONVERT_TZ(NOW(), '+00:00', '+09:00'))",
+            "INSERT INTO challenges (user_no, chal_name, start_date, end_date, chal_type, chal_status, created_at) VALUES (?, ?, ?, ?, ?, '진행중', NOW())",
             [user_no, chal_name, startDate, endDate, chal_type]
         );
 
@@ -73,8 +73,8 @@ router.post('/', requireLogin, async (req, res, next) => {
                     chal_no: result.insertId,
                     chal_name: chal_name.trim(),
                     chal_type: Number(chal_type),
-                    start_date: formatDate(startDate),
-                    end_date: formatDate(endDate),
+                    start_date: startDate,
+                    end_date: endDate,
                     chal_status: "진행중"
                 },
                 message: prevChal
@@ -97,7 +97,8 @@ router.post('/', requireLogin, async (req, res, next) => {
 router.get('/', requireLogin, async (req, res, next) => {
     try {
         const user_no = req.user.user_no;
-        const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10); // KST 날짜
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; // KST 날짜
 
         // 진행중인 최신 챌린지 1개 조회
         const [results] = await conn.query(`
@@ -204,19 +205,19 @@ router.get('/:chal_no', requireLogin, async (req, res, next) => {
 
         const [daily] = await conn.query(`
             SELECT 
-                DATE_FORMAT(CONVERT_TZ(a.routine_checked, '+00:00', '+09:00'), '%c/%e') AS date,
+                DATE_FORMAT(a.routine_checked, '%c/%e') AS date,
                 ROUND(SUM(IF(a.action_yn = 'Y', 1, 0)) / COUNT(*) * 100) AS rate
             FROM actions a
             JOIN challenge_details cd ON a.detail_no = cd.detail_no
             WHERE cd.chal_no = ? AND a.user_no = ?
-            GROUP BY DATE(CONVERT_TZ(a.routine_checked, '+00:00', '+09:00'))
-            ORDER BY DATE(CONVERT_TZ(a.routine_checked, '+00:00', '+09:00')) ASC
+            GROUP BY DATE(a.routine_checked)
+            ORDER BY DATE(a.routine_checked) ASC
         `, [chal_no, user_no]);
 
-        res.json({ 
-            status: "success", 
+        res.json({
+            status: "success",
             is_this_new_code: "YES! NEW CODE!", // <-- 이 문구가 JSON에 나와야 합니다!
-            data: { ...info[0], daily_rates: daily } 
+            data: { ...info[0], daily_rates: daily }
         });
     } catch (error) { next(error); }
 });
