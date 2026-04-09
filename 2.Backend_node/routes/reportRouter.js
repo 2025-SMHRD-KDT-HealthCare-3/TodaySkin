@@ -38,12 +38,15 @@ router.get('/daily', requireLogin, async (req, res, next) => {
 
         // 3. 오늘 분석 데이터 확인
         const [todayResults] = await conn.query(`
-            SELECT a.anls_no, a.acne_score, a.pore_score, a.total_score,
+            SELECT 
+                ia.anls_no, ia.acne_score, ia.pore_score, ia.total_score,
+                dr.line_comment,
                 DATE(u.uploaded_at) AS report_date
-            FROM img_analyses a
-            JOIN uploads u ON a.upload_no = u.upload_no
+            FROM img_analyses ia
+            JOIN uploads u ON ia.upload_no = u.upload_no
+            LEFT JOIN daily_reports dr ON ia.anls_no = dr.anls_no
             WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
-            ORDER BY a.created_at DESC LIMIT 1`, [user_no, today]);
+            ORDER BY ia.created_at DESC LIMIT 1`, [user_no, today]);
 
         const has_today_analysis = todayResults.length > 0;
 
