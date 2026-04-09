@@ -40,7 +40,7 @@ CREATE TABLE users
     birthdate  DATE           NOT NULL    COMMENT '생년월일',
     gender     CHAR(1)        NOT NULL    CHECK (gender IN ('M','F')) COMMENT '성별',
     nick       VARCHAR(30)    NOT NULL    COMMENT '닉네임',
-    skin_type   VARCHAR(20)    NOT NULL    COMMENT '피부 타입',
+    skin_type  VARCHAR(20)    NOT NULL    COMMENT '피부 타입',
     joined_at  DATETIME       NOT NULL    DEFAULT NOW() COMMENT '가입 일자',
 	PRIMARY KEY (user_no)
 );
@@ -65,7 +65,7 @@ CREATE TABLE cosmetics
     cos_name  	   VARCHAR(100)   NOT NULL    COMMENT '제품 명',
     cos_brand 	   VARCHAR(50)    NOT NULL    COMMENT '브랜드 명',
     cos_type  	   VARCHAR(30)    NOT NULL    COMMENT '제품 유형',
-    cos_ingredient TEXT       	  NOT NULL    COMMENT '주요 성분',
+    cos_ingredient LONGTEXT       NOT NULL    COMMENT '주요 성분',
 	PRIMARY KEY (cos_no)
 );
 
@@ -209,6 +209,7 @@ CREATE TABLE actions
     user_no      INT        NOT NULL    COMMENT '회원 고유번호',
     detail_no    INT        NOT NULL    COMMENT '챌린지 세부 고유번호',
     action_yn    CHAR(1)    NOT NULL    COMMENT '실행 여부',
+    routine_checked DATETIME NULL       COMMENT '날짜별 루틴 실행'
     created_at   DATETIME   NOT NULL    DEFAULT NOW() COMMENT '등록 일자',
 	PRIMARY KEY (action_no)
 );
@@ -244,11 +245,11 @@ CREATE TABLE img_analyses
     anls_no         INT            NOT NULL    AUTO_INCREMENT COMMENT '분석 고유번호',
     upload_no       INT            NOT NULL    COMMENT '업로드 고유번호',
     model_name      VARCHAR(100)   NOT NULL    COMMENT '모델 명',
-    anls_result     TEXT           NOT NULL    COMMENT '분석 결과',
+    anls_result     LONGTEXT       NULL        COMMENT '분석 결과',
     acne_score      NUMERIC(5,2)   NOT NULL    DEFAULT 0.0 COMMENT '여드름 점수',
     pore_score      NUMERIC(5,2)   NOT NULL    DEFAULT 0.0 COMMENT '모공 점수',
-    total_score     NUMERIC(5,2)   NOT NULL    DEFAULT 0.0 COMMENT '전체 점수',
-    processing_img  VARCHAR(255)   NOT NULL    COMMENT '참고 파일 명',
+    total_score     NUMERIC(5,2)   NOT NULL    DEFAULT 0.0 COMMENT '총합 점수',
+    processing_img  VARCHAR(255)   NOT NULL    COMMENT '참고 파일명',
     created_at      DATETIME       NOT NULL    DEFAULT NOW() COMMENT '분석 날짜',
 	PRIMARY KEY (anls_no)
 );
@@ -276,7 +277,7 @@ CREATE TABLE user_cosmetics
     user_no     INT          NOT NULL    COMMENT '회원 고유번호',
     cos_no      INT          NOT NULL    COMMENT '화장품 고유번호',
     source      VARCHAR(10)  NOT NULL    DEFAULT '보유' COMMENT '보유 여부',
-    expired_at  DATE         NOT NULL    COMMENT '유통기한',
+    expired_at  DATE         NULL        COMMENT '유통기한',
     created_at  DATETIME     NOT NULL    DEFAULT NOW() COMMENT '등록 일자',
 	PRIMARY KEY (ucos_no)
 );
@@ -306,14 +307,11 @@ ALTER TABLE user_cosmetics
 -- 10. daily_reports 테이블 생성
 CREATE TABLE daily_reports
 (
-    report_no         INT            NOT NULL    AUTO_INCREMENT COMMENT '리포트 고유번호', 
-    action_no         INT            NULL    COMMENT '실행 고유번호', 
+    report_no         INT            NOT NULL    AUTO_INCREMENT COMMENT '리포트 고유번호',  
     user_no           INT            NOT NULL    COMMENT '회원 고유번호', 
     chal_no           INT            NOT NULL    COMMENT '챌린지 고유번호', 
     anls_no           INT            NOT NULL    COMMENT '이미지분석 고유번호', 
-    line_comment      VARCHAR(255)   NOT NULL    COMMENT '한줄 코멘트', 
-    overall_score    INT            NOT NULL    DEFAULT 0 	   COMMENT '종합 평가 점수', 
-    achievement_rate  INT            NOT NULL    DEFAULT 0 	   COMMENT '달성 률', 
+    line_comment      VARCHAR(255)   NOT NULL    COMMENT '한줄 코멘트',   
     created_at        DATETIME       NOT NULL    DEFAULT NOW() COMMENT '등록 일자', 
 	PRIMARY KEY (report_no)
 );

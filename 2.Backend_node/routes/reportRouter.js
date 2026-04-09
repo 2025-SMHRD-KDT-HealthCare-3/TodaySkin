@@ -38,12 +38,15 @@ router.get('/daily', requireLogin, async (req, res, next) => {
 
         // 3. 오늘 분석 데이터 확인
         const [todayResults] = await conn.query(`
-            SELECT a.anls_no, a.acne_score, a.pore_score, a.total_score,
+            SELECT 
+                ia.anls_no, ia.acne_score, ia.pore_score, ia.total_score,
+                dr.line_comment,
                 DATE(u.uploaded_at) AS report_date
-            FROM img_analyses a
-            JOIN uploads u ON a.upload_no = u.upload_no
+            FROM img_analyses ia
+            JOIN uploads u ON ia.upload_no = u.upload_no
+            LEFT JOIN daily_reports dr ON ia.anls_no = dr.anls_no
             WHERE u.user_no = ? AND DATE(u.uploaded_at) = ?
-            ORDER BY a.created_at DESC LIMIT 1`, [user_no, today]);
+            ORDER BY ia.created_at DESC LIMIT 1`, [user_no, today]);
 
         const has_today_analysis = todayResults.length > 0;
 
@@ -116,9 +119,9 @@ router.get('/daily', requireLogin, async (req, res, next) => {
                     if (commentRes.data?.status === 'success') {
                         line_comment = commentRes.data.data.line_comment;
                         await conn.query(`
-                            INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, overall_review, achievement_rate, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, NOW())
-                        `, [user_no, chal_no, analysis.anls_no, line_comment, "오늘의 분석 결과입니다.", daily_rate]);
+                            INSERT INTO daily_reports (user_no, chal_no, anls_no, line_comment, created_at)
+                            VALUES (?, ?, ?, ?, NOW())
+                        `, [user_no, chal_no, analysis.anls_no, line_comment ]);
                     }
                 } catch (aiErr) {
                     console.error('[AI ERROR]', aiErr.message);
