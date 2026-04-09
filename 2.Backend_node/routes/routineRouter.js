@@ -164,6 +164,18 @@ router.get('/', requireLogin, async (req, res, next) => {
             `, [user_no, getKSTDatetime(), user_no, chal_no]);
         }
 
+        await conn.query(`
+            INSERT INTO actions (user_no, detail_no, action_yn, created_at)
+            SELECT ?, cd.detail_no, 'N', ?
+            FROM challenge_details cd
+            JOIN routines r ON cd.routine_no = r.routine_no
+            JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = ?
+            LEFT JOIN actions a ON cd.detail_no = a.detail_no AND a.user_no = ? AND DATE(a.created_at) = ?
+            WHERE cd.chal_no = ? 
+              AND uc.source = '보유'
+              AND a.action_no IS NULL 
+        `, [user_no, getKSTDatetime(), user_no, user_no, today, chal_no]);
+
         // 최종 응답 데이터 구성
         const routineSql = `
             SELECT 
