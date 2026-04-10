@@ -187,19 +187,15 @@ router.get('/challenge/:chal_no', requireLogin, async (req, res, next) => {
         const [scores] = await conn.query(scoreQuery, [user_no, start_date, end_date]);
 
         // 3. 아래 그래프 데이터 (루틴 달성률) — created_at 기준, getCumulativeRate와 동일 전략
-        const [dailyRates] = await conn.query(`
+       const [dailyRates] = await conn.query(`
             SELECT
                 DATE(a.created_at) AS date,
                 ROUND(SUM(CASE WHEN a.action_yn = 'Y' THEN 1 ELSE 0 END) / COUNT(*) * 100) AS rate
             FROM actions a
             JOIN challenge_details cd ON a.detail_no = cd.detail_no
-            JOIN routines r ON cd.routine_no = r.routine_no
-            JOIN user_cosmetics uc ON r.cos_no = uc.cos_no AND uc.user_no = a.user_no
             WHERE a.user_no = ?
-              AND cd.chal_no = ?
-              AND DATE(a.created_at) BETWEEN DATE(?) AND DATE(?)
-              AND uc.source = '보유'
-              AND r.routine_time IN ('morning', 'evening')
+            AND cd.chal_no = ?
+            AND DATE(a.created_at) BETWEEN DATE(?) AND DATE(?)
             GROUP BY DATE(a.created_at)
             ORDER BY date ASC
         `, [user_no, chal_no, start_date, end_date]);
